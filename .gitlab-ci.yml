@@ -1,0 +1,25 @@
+image: alpine:latest
+
+stages:
+  - deploy
+
+pages:
+  stage: deploy
+  script:
+    - apk add --no-cache bash
+    - rm -rf public || true
+    - mkdir -p public
+    - cp -r html/* public/
+    - cp -r css public/
+    - cp -r js public/
+    - cp -r assets public/ || true
+    - cp -r data public/ || true
+    - if [ -f C/build/vector2D.wasm ]; then mkdir -p public/js && cp C/build/vector2D.wasm public/js/; fi
+    - echo "Deployed on $(date)" > public/DEPLOYED.txt
+  artifacts:
+    paths:
+      - public
+    expire_in: 1 week
+  only:
+    - main
+    - master

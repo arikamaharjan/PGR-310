@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vector2D WASM Memory Test</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; padding: 24px; background: #0b1020; color: #e5e7eb; }
+    .card { max-width: 900px; margin: 0 auto; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-radius: 14px; padding: 18px; }
+    h1 { margin: 0 0 8px; font-size: 20px; }
+    p { margin: 8px 0; color: #cbd5e1; }
+    code { background: rgba(0,0,0,0.35); padding: 2px 6px; border-radius: 6px; }
+    button { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 10px 14px; border-radius: 10px; cursor: pointer; font-weight: 600; }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+    .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+    input { padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.18); background: rgba(0,0,0,0.25); color: #e5e7eb; width: 220px; }
+    pre { margin-top: 12px; padding: 12px; border-radius: 12px; background: rgba(0,0,0,0.35); overflow: auto; max-height: 340px; }
+    .ok { color: #34d399; }
+    .warn { color: #fbbf24; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Vector2D WASM Memory Spike Test</h1>
+    <p>Loads <code>js/vector2D.js</code> and repeatedly calls exported functions while tracking <code>Module.HEAP8.buffer.byteLength</code> (WASM heap size).</p>
+
+    <div class="row">
+      <input id="iters" type="number" min="1000" step="1000" value="5000000" />
+      <button id="runBtn">Run test</button>
+      <button id="stopBtn" disabled>Stop</button>
+    </div>
+
+    <pre id="log">Loading WASM…</pre>
+
+    <p class="warn">Tip: run this from HTTP (not file://). Example: <code>python3 -m http.server 8080</code> then open <code>/html/wasm_test.html</code>.</p>
+  </div>
+
+  <script>
+    // Provide Module hook before loading Emscripten output.
+    window.Module = window.Module || {};
+  </script>
+  <script src="../js/vector2D.js"></script>
+  <script>
+    const logEl = document.getElementById('log');
+    const runBtn = document.getElementById('runBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const itersEl = document.getElementById('iters');
+
+    const log = (msg) => {
+      logEl.textContent += `\n${msg}`;
+      logEl.scrollTop = logEl.scrollHeight;
+    };
+
+    let stop = false;
+
+    Module.onRuntimeInitialized = () => {
+      logEl.textContent = 'WASM loaded. Ready.';
+
+      const lerpX = Module.cwrap('vector2D_lerp_x', 'number', ['number','number','number','number','number']);
+      const magXY = Module.cwrap('vector2D_magnitude_xy', 'number', ['number','number']);
+      const dotXY = Module.cwrap('vector2D_dot_xy', 'number', ['number','number','number','number']);
+
+      const heapBytes = () => Module.HEAP8?.buffer?.byteLength || 0;
+      const fmtMB = (b) => (b / (1024 * 1024)).toFixed(2);
+
+      runBtn.addEventListener('click', async () => {
+        stop = false;
+        runBtn.disabled = true;
+        stopBtn.disabled = false;
+
+        const iters = Math.max(1000, Number(itersEl.value || 0));
+        const startHeap = heapBytes();
+        const start = performance.now();
+
+        log(`Start heap: ${fmtMB(startHeap)} MB (${startHeap} bytes)`);
+        log(`Iterations: ${iters}`);
+
+        let y = 0;
+        let acc = 0;
+
+        const chunk = 200000;
+        for (let i = 0; i < iters; i++) {
+          // keep it simple but non-trivial
+          y = lerpX(y, 0, (i % 500) - 250, 0, 0.08);
+          acc += dotXY(y, y + 1.0, y + 2.0, y + 3.0);
+          acc += magXY(y, y + 0.5);
+
+          if (stop) break;
+          if ((i % chunk) === 0 && i !== 0) {
+            const nowHeap = heapBytes();
+            log(`i=${i} heap=${fmtMB(nowHeap)} MB (+${fmtMB(nowHeap - startHeap)} MB)`);
+            // yield so UI stays responsive
+            await new Promise(r => setTimeout(r, 0));
+          }
+        }
+
+        const end = performance.now();
+        const endHeap = heapBytes();
+        const delta = endHeap - startHeap;
+
+        log('---');
+        log(`End heap: ${fmtMB(endHeap)} MB (delta ${fmtMB(delta)} MB)`);
+        log(`Time: ${((end - start)/1000).toFixed(2)}s`);
+        log(`Sink: ${acc.toFixed(3)}`);
+        log(delta === 0 ? 'Result: OK (no heap growth observed)' : 'Result: WARN (heap grew; investigate why)');
+
+        runBtn.disabled = false;
+        stopBtn.disabled = true;
+      });
+
+      stopBtn.addEventListener('click', () => {
+        stop = true;
+        log('Stop requested…');
+      });
+    };
+  </script>
+</body>
+</html>

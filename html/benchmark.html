@@ -1,0 +1,829 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WASM vs JS Performance Benchmark</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg: #0f172a;
+            --surface: #1e293b;
+            --border: #334155;
+            --text: #e2e8f0;
+            --muted: #94a3b8;
+            --green: #22c55e;
+            --red: #ef4444;
+            --blue: #3b82f6;
+            --purple: #a855f7;
+            --yellow: #eab308;
+        }
+
+        body {
+            font-family: 'Space Grotesk', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            padding: 2rem;
+        }
+
+        h1 {
+            text-align: center;
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+            background: linear-gradient(135deg, #6366f1, #a855f7, #ec4899);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: var(--muted);
+            margin-bottom: 2rem;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+            max-width: 1100px;
+            margin: 0 auto 2rem;
+        }
+
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.5rem;
+        }
+
+        .card h2 {
+            font-size: 1.1rem;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .card.full {
+            grid-column: 1 / -1;
+        }
+
+        /* FPS Monitor */
+        .fps-display {
+            font-size: 3rem;
+            font-weight: 700;
+            text-align: center;
+            padding: 1rem;
+        }
+
+        .fps-good {
+            color: var(--green);
+        }
+
+        .fps-ok {
+            color: var(--yellow);
+        }
+
+        .fps-bad {
+            color: var(--red);
+        }
+
+        .fps-bar-container {
+            height: 60px;
+            display: flex;
+            align-items: flex-end;
+            gap: 1px;
+            overflow: hidden;
+            border-radius: 6px;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 4px;
+        }
+
+        .fps-bar {
+            flex: 1;
+            min-width: 2px;
+            background: var(--green);
+            border-radius: 1px;
+            transition: height 50ms;
+        }
+
+        /* Benchmark Results */
+        .result-row {
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr 1fr;
+            gap: 0.5rem;
+            padding: 0.6rem 0;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.85rem;
+            align-items: center;
+        }
+
+        .result-row.header {
+            font-weight: 700;
+            color: var(--muted);
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .result-row .label {
+            font-weight: 500;
+        }
+
+        .result-row .js-val {
+            color: var(--yellow);
+            font-family: monospace;
+        }
+
+        .result-row .wasm-val {
+            color: var(--purple);
+            font-family: monospace;
+        }
+
+        .speedup {
+            font-weight: 700;
+            font-family: monospace;
+        }
+
+        .speedup.faster {
+            color: var(--green);
+        }
+
+        .speedup.slower {
+            color: var(--red);
+        }
+
+        .speedup.same {
+            color: var(--muted);
+        }
+
+        /* Controls */
+        .controls {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            margin-bottom: 2rem;
+            flex-wrap: wrap;
+        }
+
+        button {
+            padding: 0.7rem 1.5rem;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--surface);
+            color: var(--text);
+            font-family: inherit;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        button:hover {
+            border-color: var(--blue);
+            background: rgba(59, 130, 246, 0.1);
+        }
+
+        button.primary {
+            background: linear-gradient(135deg, #6366f1, #a855f7);
+            border: none;
+        }
+
+        button.primary:hover {
+            opacity: 0.9;
+        }
+
+        button:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        .status {
+            text-align: center;
+            padding: 0.5rem;
+            color: var(--muted);
+            font-size: 0.85rem;
+        }
+
+        .iterations-input {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 0.5rem 1rem;
+            color: var(--text);
+            font-family: inherit;
+            font-size: 0.9rem;
+            width: 140px;
+            text-align: center;
+        }
+
+        .summary-box {
+            background: rgba(99, 102, 241, 0.08);
+            border: 1px solid rgba(99, 102, 241, 0.2);
+            border-radius: 8px;
+            padding: 1rem;
+            margin-top: 1rem;
+            font-size: 0.9rem;
+            line-height: 1.8;
+        }
+
+        /* Frame budget */
+        .budget-bar {
+            height: 24px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 6px;
+            overflow: hidden;
+            margin: 0.5rem 0;
+            position: relative;
+        }
+
+        .budget-fill {
+            height: 100%;
+            border-radius: 6px;
+            transition: width 0.3s;
+        }
+
+        .budget-fill.ok {
+            background: linear-gradient(90deg, var(--green), #16a34a);
+        }
+
+        .budget-fill.warn {
+            background: linear-gradient(90deg, var(--yellow), #ca8a04);
+        }
+
+        .budget-fill.over {
+            background: linear-gradient(90deg, var(--red), #dc2626);
+        }
+
+        .budget-label {
+            font-size: 0.8rem;
+            color: var(--muted);
+            display: flex;
+            justify-content: space-between;
+        }
+
+        /* Stress test */
+        .stress-canvas {
+            width: 100%;
+            height: 150px;
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.3);
+        }
+
+        .tag {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            font-weight: 600;
+        }
+
+        .tag-wasm {
+            background: rgba(168, 85, 247, 0.2);
+            color: var(--purple);
+        }
+
+        .tag-js {
+            background: rgba(234, 179, 8, 0.2);
+            color: var(--yellow);
+        }
+
+        .tag-na {
+            background: rgba(148, 163, 184, 0.15);
+            color: var(--muted);
+        }
+
+        @media (max-width: 768px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+
+            .result-row {
+                grid-template-columns: 1.5fr 1fr 1fr 0.8fr;
+                font-size: 0.8rem;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>⚡ WASM vs JS Performance Benchmark</h1>
+    <p class="subtitle">Measure how much faster your C/WASM animation math is compared to pure JavaScript</p>
+
+    <div class="controls">
+        <label style="display:flex;align-items:center;gap:0.5rem;color:var(--muted);font-size:0.85rem">
+            Iterations:
+            <input type="number" class="iterations-input" id="iterations" value="1000000" min="1000" max="100000000"
+                step="100000">
+        </label>
+        <button class="primary" id="runBtn" onclick="runBenchmarks()">▶ Run Benchmark</button>
+        <button id="stressBtn" onclick="toggleStress()">🔥 Stress Test</button>
+    </div>
+
+    <div id="statusBar" class="status">
+        <span id="wasmStatus"></span>
+    </div>
+
+    <div class="grid">
+        <!-- FPS Monitor -->
+        <div class="card">
+            <h2>📊 Live FPS Monitor</h2>
+            <div class="fps-display" id="fpsDisplay">--</div>
+            <div class="fps-bar-container" id="fpsHistory"></div>
+            <div class="budget-label" style="margin-top:0.5rem">
+                <span>Frame budget (16.67ms target for 60fps)</span>
+                <span id="frameBudgetMs">--</span>
+            </div>
+            <div class="budget-bar">
+                <div class="budget-fill ok" id="budgetFill" style="width:0%"></div>
+            </div>
+            <div class="budget-label">
+                <span>0ms</span>
+                <span>16.67ms (60fps)</span>
+                <span>33.3ms (30fps)</span>
+            </div>
+        </div>
+
+        <!-- WASM Status -->
+        <div class="card">
+            <h2>🔧 Runtime Info</h2>
+            <div id="runtimeInfo" style="font-size:0.85rem;line-height:2">
+                Loading...
+            </div>
+        </div>
+
+        <!-- Benchmark Results -->
+        <div class="card full">
+            <h2>🏃 Micro-Benchmark Results</h2>
+            <p style="color:var(--muted);font-size:0.8rem;margin-bottom:1rem">
+                Each function is called N times in a tight loop. Times are in milliseconds.
+            </p>
+            <div class="result-row header">
+                <span>Function</span>
+                <span>JS (ms)</span>
+                <span>WASM (ms)</span>
+                <span>Speedup</span>
+            </div>
+            <div id="benchResults">
+                <div class="status">Click "Run Benchmark" to start</div>
+            </div>
+            <div id="summaryBox"></div>
+        </div>
+
+        <!-- Stress Test -->
+        <div class="card full">
+            <h2>🔥 Stress Test — Animate 500 elements</h2>
+            <p style="color:var(--muted);font-size:0.8rem;margin-bottom:0.5rem">
+                Runs the easing function on 500 animated values per frame. Watch FPS above to gauge real impact.
+            </p>
+            <canvas class="stress-canvas" id="stressCanvas"></canvas>
+            <div style="display:flex;gap:1rem;margin-top:0.5rem;font-size:0.8rem;color:var(--muted)">
+                <span>Status: <strong id="stressStatus">Stopped</strong></span>
+                <span>Mode: <strong id="stressMode">--</strong></span>
+                <span>Elements: <strong>500</strong></span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ======================================================================
+        // WASM SETUP
+        // ======================================================================
+        window.Module = window.Module || {};
+        window.Module.locateFile = (path, prefix) => `${prefix}${path}?v=${Date.now()}`;
+        window.Module.onRuntimeInitialized = () => {
+            window.__vector2dWasmReady = true;
+            window.dispatchEvent(new Event('vector2d-wasm-ready'));
+        };
+    </script>
+    <script src="../js/vector2D.js"></script>
+    <script>
+        // ======================================================================
+        // JS FALLBACKS (identical to what's in script.js)
+        // ======================================================================
+        const clamp01 = x => Math.max(0, Math.min(1, x));
+
+        const JS = {
+            easeInOutCubic: (t) => { t = clamp01(t); return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; },
+            easeOutElastic: (t) => { t = clamp01(t); if (t === 0 || t === 1) return t; return Math.pow(2, -10 * t) * Math.sin((t * 10 - 0.75) * (2 * Math.PI / 3)) + 1; },
+            easeOutBounce: (t) => { t = clamp01(t); const n = 7.5625, d = 2.75; if (t < 1 / d) return n * t * t; if (t < 2 / d) { t -= 1.5 / d; return n * t * t + .75; } if (t < 2.5 / d) { t -= 2.25 / d; return n * t * t + .9375; } t -= 2.625 / d; return n * t * t + .984375; },
+            easeOutBack: (t) => { t = clamp01(t); const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); },
+            easeInOutQuart: (t) => { t = clamp01(t); return t < 0.5 ? 8 * t * t * t * t : 1 - Math.pow(-2 * t + 2, 4) / 2; },
+            smoothstep: (t) => { t = clamp01(t); return t * t * (3 - 2 * t); },
+            noise1: (x) => { const ix = Math.floor(x); const fx = x - ix; const u = fx * fx * (3 - 2 * fx); const a = Math.sin(ix * 127.1) * 43758.5453123; const b = Math.sin((ix + 1) * 127.1) * 43758.5453123; return (a - Math.floor(a)) * (1 - u) + (b - Math.floor(b)) * u; },
+        };
+
+        // ======================================================================
+        // WASM BINDINGS
+        // ======================================================================
+        let WASM = null;
+        let wasmAvailable = false;
+
+        const initWasmBindings = () => {
+            if (!window.Module?.cwrap) return false;
+            const has = n => typeof window.Module[`_${n}`] === 'function';
+            if (!has('anim_ease_in_out_cubic')) return false;
+
+            try {
+                const w = window.Module.cwrap;
+                WASM = {};
+                if (has('anim_ease_in_out_cubic')) WASM.easeInOutCubic = w('anim_ease_in_out_cubic', 'number', ['number']);
+                if (has('anim_ease_out_elastic')) WASM.easeOutElastic = w('anim_ease_out_elastic', 'number', ['number']);
+                if (has('anim_ease_out_bounce')) WASM.easeOutBounce = w('anim_ease_out_bounce', 'number', ['number']);
+                if (has('anim_ease_out_back')) WASM.easeOutBack = w('anim_ease_out_back', 'number', ['number']);
+                if (has('anim_ease_in_out_quart')) WASM.easeInOutQuart = w('anim_ease_in_out_quart', 'number', ['number']);
+                if (has('anim_smoothstep')) WASM.smoothstep = w('anim_smoothstep', 'number', ['number']);
+                if (has('anim_noise1')) WASM.noise1 = w('anim_noise1', 'number', ['number']);
+                wasmAvailable = Object.keys(WASM).length > 0;
+                return wasmAvailable;
+            } catch (e) {
+                console.error('WASM init failed:', e);
+                return false;
+            }
+        };
+
+        // ======================================================================
+        // FPS MONITOR
+        // ======================================================================
+        const fpsDisplay = document.getElementById('fpsDisplay');
+        const fpsHistoryEl = document.getElementById('fpsHistory');
+        const budgetFill = document.getElementById('budgetFill');
+        const frameBudgetMs = document.getElementById('frameBudgetMs');
+        const FPS_HISTORY = 80;
+        const fpsValues = [];
+
+        let lastFrameTime = performance.now();
+        let frameCount = 0;
+        let lastFpsUpdate = performance.now();
+        let currentFps = 0;
+        let lastFrameDuration = 0;
+
+        // Create history bars
+        for (let i = 0; i < FPS_HISTORY; i++) {
+            const bar = document.createElement('div');
+            bar.className = 'fps-bar';
+            bar.style.height = '0%';
+            fpsHistoryEl.appendChild(bar);
+        }
+
+        const updateFps = (ts) => {
+            const delta = ts - lastFrameTime;
+            lastFrameTime = ts;
+            lastFrameDuration = delta;
+            frameCount++;
+
+            if (ts - lastFpsUpdate >= 200) {
+                currentFps = Math.round(frameCount / ((ts - lastFpsUpdate) / 1000));
+                frameCount = 0;
+                lastFpsUpdate = ts;
+
+                fpsDisplay.textContent = currentFps;
+                fpsDisplay.className = 'fps-display ' + (currentFps >= 55 ? 'fps-good' : currentFps >= 30 ? 'fps-ok' : 'fps-bad');
+
+                fpsValues.push(currentFps);
+                if (fpsValues.length > FPS_HISTORY) fpsValues.shift();
+
+                const bars = fpsHistoryEl.children;
+                for (let i = 0; i < FPS_HISTORY; i++) {
+                    const val = fpsValues[fpsValues.length - FPS_HISTORY + i] || 0;
+                    const pct = Math.min(100, (val / 120) * 100);
+                    bars[i].style.height = `${pct}%`;
+                    bars[i].style.background = val >= 55 ? 'var(--green)' : val >= 30 ? 'var(--yellow)' : 'var(--red)';
+                }
+
+                // Frame budget
+                const budgetPct = Math.min(200, (delta / 33.3) * 100);
+                budgetFill.style.width = `${Math.min(100, budgetPct)}%`;
+                budgetFill.className = 'budget-fill ' + (delta <= 16.67 ? 'ok' : delta <= 25 ? 'warn' : 'over');
+                frameBudgetMs.textContent = `${delta.toFixed(1)}ms`;
+            }
+
+            requestAnimationFrame(updateFps);
+        };
+        requestAnimationFrame(updateFps);
+
+        // ======================================================================
+        // MICRO-BENCHMARK ENGINE
+        // ======================================================================
+        const benchmarkFn = (fn, iterations) => {
+            // Warmup
+            for (let i = 0; i < 1000; i++) fn(i / 1000);
+
+            const t0 = performance.now();
+            for (let i = 0; i < iterations; i++) {
+                fn(i / iterations);
+            }
+            const t1 = performance.now();
+            return t1 - t0;
+        };
+
+        const runBenchmarks = () => {
+            const btn = document.getElementById('runBtn');
+            btn.disabled = true;
+            btn.textContent = '⏳ Running...';
+
+            const iterations = parseInt(document.getElementById('iterations').value) || 1000000;
+            const resultsEl = document.getElementById('benchResults');
+            resultsEl.innerHTML = '<div class="status">Running benchmarks...</div>';
+
+            // Use setTimeout to let UI update
+            setTimeout(() => {
+                const tests = [
+                    { name: 'easeInOutCubic', js: JS.easeInOutCubic, wasm: WASM?.easeInOutCubic },
+                    { name: 'easeOutElastic', js: JS.easeOutElastic, wasm: WASM?.easeOutElastic },
+                    { name: 'easeOutBounce', js: JS.easeOutBounce, wasm: WASM?.easeOutBounce },
+                    { name: 'easeOutBack', js: JS.easeOutBack, wasm: WASM?.easeOutBack },
+                    { name: 'easeInOutQuart', js: JS.easeInOutQuart, wasm: WASM?.easeInOutQuart },
+                    { name: 'smoothstep', js: JS.smoothstep, wasm: WASM?.smoothstep },
+                    { name: 'noise1', js: JS.noise1, wasm: WASM?.noise1 },
+                ];
+
+                const results = [];
+                resultsEl.innerHTML = '';
+
+                let totalJs = 0, totalWasm = 0, wasmCount = 0;
+
+                for (const test of tests) {
+                    const jsTime = benchmarkFn(test.js, iterations);
+                    const wasmTime = test.wasm ? benchmarkFn(test.wasm, iterations) : null;
+
+                    totalJs += jsTime;
+                    if (wasmTime !== null) { totalWasm += wasmTime; wasmCount++; }
+
+                    const speedup = wasmTime !== null ? (jsTime / wasmTime) : null;
+                    results.push({ name: test.name, jsTime, wasmTime, speedup });
+
+                    const row = document.createElement('div');
+                    row.className = 'result-row';
+
+                    let speedupHtml;
+                    if (speedup === null) {
+                        speedupHtml = '<span class="tag tag-na">N/A</span>';
+                    } else if (speedup > 1.05) {
+                        speedupHtml = `<span class="speedup faster">${speedup.toFixed(2)}× faster</span>`;
+                    } else if (speedup < 0.95) {
+                        speedupHtml = `<span class="speedup slower">${(1 / speedup).toFixed(2)}× slower</span>`;
+                    } else {
+                        speedupHtml = `<span class="speedup same">~same</span>`;
+                    }
+
+                    row.innerHTML = `
+                    <span class="label">${test.name}</span>
+                    <span class="js-val">${jsTime.toFixed(2)}</span>
+                    <span class="wasm-val">${wasmTime !== null ? wasmTime.toFixed(2) : '--'}</span>
+                    ${speedupHtml}
+                `;
+                    resultsEl.appendChild(row);
+                }
+
+                // Summary
+                const summaryEl = document.getElementById('summaryBox');
+                const avgSpeedup = wasmCount > 0 ? (totalJs / totalWasm) : null;
+                const perCallJs = (totalJs / (tests.length * iterations) * 1e6).toFixed(1); // nanoseconds
+                const perCallWasm = wasmCount > 0 ? (totalWasm / (wasmCount * iterations) * 1e6).toFixed(1) : '--';
+
+                summaryEl.innerHTML = `
+                <div class="summary-box">
+                    <strong>Summary (${(iterations / 1e6).toFixed(1)}M iterations per function):</strong><br>
+                    JS total: <span style="color:var(--yellow)">${totalJs.toFixed(1)}ms</span> |
+                    WASM total: <span style="color:var(--purple)">${wasmCount > 0 ? totalWasm.toFixed(1) + 'ms' : 'not available'}</span><br>
+                    Per-call: JS ~${perCallJs}ns | WASM ~${perCallWasm}ns<br>
+                    ${avgSpeedup !== null
+                        ? `Overall WASM speedup: <strong style="color:${avgSpeedup > 1 ? 'var(--green)' : 'var(--red)'}">${avgSpeedup.toFixed(2)}×</strong>`
+                        : '<span style="color:var(--muted)">WASM not loaded — install Emscripten and run <code>make install</code> in the C/ directory to build</span>'
+                    }<br><br>
+                    <strong>💡 Why is WASM sometimes "slower" here?</strong><br>
+                    These are <strong>micro-benchmarks</strong>. Calling a WASM function from JS is like "crossing a bridge". If you cross a bridge just to do a tiny math operation 1 million times, you spend more time walking the bridge than doing math.
+                    <br><br>
+                    <strong>The WASM Secret: Batch Processing</strong><br>
+                    WASM wins when you "cross the bridge once" and process 1000 items inside WASM memory. That's why your <code>Particle FX</code> and <code>Stress Animations</code> use <strong>Batch Drivers</strong>.
+                </div>
+            `;
+
+                btn.disabled = false;
+                btn.textContent = '▶ Run Again';
+            }, 50);
+        };
+
+        // ======================================================================
+        // BATCH BENCHMARK (The Real Proof)
+        // ======================================================================
+        const runBatchBenchmark = () => {
+            if (!wasmAvailable) return alert("WASM not loaded!");
+            const resultsEl = document.getElementById('summaryBox');
+            const w = window.Module.cwrap;
+
+            // Dynamic cwrap for new functions
+            const wasmInternalCubic = w('anim_benchmark_cubic_batch', 'number', ['number']);
+
+            resultsEl.innerHTML = '<div class="status">Running Bridge vs Zero-Bridge comparison...</div>';
+
+            setTimeout(() => {
+                const iterations = 1000000; // 1 Million iterations
+
+                // 1. JS Loop (The Baseline)
+                const t0 = performance.now();
+                let sumJs = 0;
+                for (let i = 0; i < iterations; i++) {
+                    sumJs += JS.easeInOutCubic(i / iterations);
+                }
+                const tJs = performance.now() - t0;
+
+                // 2. WASM Loop via BRIDGE (The slow way: 1M context switches)
+                const t1 = performance.now();
+                let sumWasmBridge = 0;
+                const wasmCubic = w('anim_ease_in_out_cubic', 'number', ['number']);
+                for (let i = 0; i < iterations; i++) {
+                    sumWasmBridge += wasmCubic(i / iterations);
+                }
+                const tWasmBridge = performance.now() - t1;
+
+                // 3. WASM INTERNAL (The fast way: 1 context switch for 1M operations)
+                const t2 = performance.now();
+                const sumWasmInternal = wasmInternalCubic(iterations);
+                const tWasmInternal = performance.now() - t2;
+
+                const bridgeOverhead = tWasmBridge / tWasmInternal;
+                const pureSpeedup = tJs / tWasmInternal;
+
+                resultsEl.innerHTML = `
+                <div class="summary-box" style="border-color: var(--green)">
+                    <strong>🚀 THE "BRIDGE" PROOF (1,000,000 cubic easing calls)</strong><br><br>
+                    
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px;">
+                        <div style="background: rgba(0,0,0,0.2); padding: 10px; border-radius: 4px;">
+                            <span style="color:var(--yellow)">JS Pure Loop</span><br>
+                            <span style="font-size: 1.5rem">${tJs.toFixed(1)}ms</span>
+                        </div>
+                        <div style="background: rgba(0,0,0,0.2); padding: 10px; border-radius: 4px;">
+                            <span style="color:var(--red)">WASM via Bridge</span><br>
+                            <span style="font-size: 1.5rem">${tWasmBridge.toFixed(1)}ms</span>
+                            <div style="font-size:0.7rem; color:var(--muted)">1 Million Context Switches</div>
+                        </div>
+                    </div>
+
+                    <div style="background: var(--purple); color: white; padding: 15px; border-radius: 4px; margin-bottom: 15px; text-align: center;">
+                        <span style="font-weight: bold; text-transform: uppercase; font-size: 0.8rem;">WASM Internal (Zero Bridge)</span><br>
+                        <span style="font-size: 2.5rem; font-weight: 800;">${tWasmInternal.toFixed(2)}ms</span>
+                        <div style="font-size:0.9rem; opacity: 0.9">1 Single Context Switch</div>
+                    </div>
+
+                    <div style="font-size: 1.1rem; line-height: 1.4;">
+                        ✅ WASM math is <strong style="color:var(--green)">${pureSpeedup.toFixed(1)}× FASTER</strong> than JS.<br>
+                        ⚠️ The "Bridge" cost was <strong style="color:var(--red)">${bridgeOverhead.toFixed(0)}× the cost of the math itself!</strong>
+                    </div>
+
+                    <p style="font-size:0.85rem; color:var(--muted); margin-top:1rem; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 10px;">
+                        <strong>Conclusion:</strong> Your benchmark's "WASM is slower" results are purely due to context switching. 
+                        This is why our <code>Unified Simulation</code> is so fast: it does all the work internally.
+                    </p>
+                </div>
+            `;
+            }, 50);
+        };
+
+        // Add button to HTML via JS for simplicity since I'm in replace mode
+        const controls = document.querySelector('.controls');
+        const batchBtn = document.createElement('button');
+        batchBtn.textContent = '⚡ Run Batch Test';
+        batchBtn.onclick = runBatchBenchmark;
+        batchBtn.classList.add('primary');
+        batchBtn.style.marginLeft = '10px';
+        controls.appendChild(batchBtn);
+
+        // ======================================================================
+        // STRESS TEST — animate 500 elements on canvas
+        // ======================================================================
+        const stressCanvas = document.getElementById('stressCanvas');
+        const stressCtx = stressCanvas.getContext('2d');
+        let stressRunning = false;
+        let stressElements = [];
+
+        const initStressElements = () => {
+            stressElements = [];
+            const w = stressCanvas.width, h = stressCanvas.height;
+            for (let i = 0; i < 500; i++) {
+                stressElements.push({
+                    x: Math.random() * w,
+                    baseY: 20 + Math.random() * (h - 40),
+                    phase: Math.random() * Math.PI * 2,
+                    speed: 0.5 + Math.random() * 2,
+                    size: 3 + Math.random() * 5,
+                    hue: 220 + Math.random() * 80,
+                });
+            }
+        };
+
+        const resizeStressCanvas = () => {
+            const rect = stressCanvas.getBoundingClientRect();
+            stressCanvas.width = rect.width * 2;
+            stressCanvas.height = rect.height * 2;
+            stressCtx.setTransform(2, 0, 0, 2, 0, 0);
+            initStressElements();
+        };
+
+        const toggleStress = () => {
+            stressRunning = !stressRunning;
+            document.getElementById('stressStatus').textContent = stressRunning ? 'Running' : 'Stopped';
+            document.getElementById('stressMode').textContent = wasmAvailable ? 'WASM easing' : 'JS easing';
+            document.getElementById('stressBtn').textContent = stressRunning ? '⏹ Stop Stress' : '🔥 Stress Test';
+
+            if (stressRunning) {
+                resizeStressCanvas();
+                stressTick(performance.now());
+            }
+        };
+
+        const stressTick = (ts) => {
+            if (!stressRunning) return;
+
+            const w = stressCanvas.getBoundingClientRect().width;
+            const h = stressCanvas.getBoundingClientRect().height;
+            stressCtx.clearRect(0, 0, w, h);
+
+            const easeFn = wasmAvailable ? WASM.easeInOutCubic : JS.easeInOutCubic;
+            const time = ts / 1000;
+
+            for (const el of stressElements) {
+                // Compute animated t using sin wave, then pass through easing
+                const rawT = (Math.sin(time * el.speed + el.phase) + 1) / 2;
+                const easedT = easeFn(rawT);
+
+                const x = el.x;
+                const y = el.baseY + (easedT - 0.5) * 30;
+                const alpha = 0.3 + easedT * 0.7;
+
+                stressCtx.beginPath();
+                stressCtx.fillStyle = `hsla(${el.hue}, 80%, 60%, ${alpha})`;
+                stressCtx.arc(x, y, el.size * (0.8 + easedT * 0.4), 0, Math.PI * 2);
+                stressCtx.fill();
+            }
+
+            requestAnimationFrame(stressTick);
+        };
+
+        // ======================================================================
+        // INIT
+        // ======================================================================
+        const updateRuntimeInfo = () => {
+            const info = document.getElementById('runtimeInfo');
+            const status = document.getElementById('wasmStatus');
+
+            const lines = [];
+            lines.push(`<strong>Browser:</strong> ${navigator.userAgent.split(') ')[0].split('(')[1] || 'Unknown'}`);
+            lines.push(`<strong>Cores:</strong> ${navigator.hardwareConcurrency || '?'}`);
+            lines.push(`<strong>Device pixel ratio:</strong> ${window.devicePixelRatio}`);
+            lines.push(`<strong>Window:</strong> ${window.innerWidth}×${window.innerHeight}`);
+
+            if (wasmAvailable) {
+                const fns = Object.keys(WASM).filter(k => WASM[k]);
+                lines.push(`<strong>WASM:</strong> <span style="color:var(--green)">✓ Loaded</span> (${fns.length} functions)`);
+                lines.push(`<strong>Functions:</strong> ${fns.join(', ')}`);
+                status.innerHTML = '<span style="color:var(--green)">✓ WASM loaded — benchmarking both JS and WASM</span>';
+            } else {
+                lines.push(`<strong>WASM:</strong> <span style="color:var(--yellow)">✗ Not loaded</span>`);
+                lines.push(`<strong>Reason:</strong> Module not built or vector2D.js not found`);
+                lines.push(`<strong>Fix:</strong> Install Emscripten, then <code>cd C/ && make install</code>`);
+                status.innerHTML = '<span style="color:var(--yellow)">⚠ WASM not loaded — benchmarking JS only. Build WASM with Emscripten to compare.</span>';
+            }
+
+            info.innerHTML = lines.join('<br>');
+        };
+
+        // Try WASM init
+        const tryInit = () => {
+            initWasmBindings();
+            updateRuntimeInfo();
+        };
+
+        if (window.__vector2dWasmReady) {
+            tryInit();
+        } else {
+            window.addEventListener('vector2d-wasm-ready', tryInit);
+            // Also try after a delay in case WASM never loads
+            setTimeout(() => {
+                if (!wasmAvailable) {
+                    tryInit();
+                }
+            }, 2000);
+        }
+
+        // Handle resize
+        window.addEventListener('resize', () => {
+            if (stressRunning) resizeStressCanvas();
+        });
+    </script>
+
+</body>
+
+</html>

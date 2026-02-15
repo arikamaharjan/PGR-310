@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<profile>
+  <hero>
+    <subtitle>HELLO I'M</subtitle>
+    <name>Your Name</name>
+    <tagline>Tech Enthusiast | Flutter Developer</tagline>
+    <description>
+      I use animation as a third dimension by which to simplify experiences and guide users through each interaction.
+    </description>
+    <cta>Discover Now</cta>
+    <image>
+      https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&amp;h=500&amp;fit=crop
+    </image>
+  </hero>
+
+  <about>
+    <image>
+      https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&amp;h=400&amp;fit=crop
+    </image>
+    <name>Your Name</name>
+    <age>24 Years</age>
+    <description>
+      Write a short intro about yourself here.
+    </description>
+    <email>you@example.com</email>
+    <phone>+000 000 0000</phone>
+    <address>City, Country</address>
+    <freelance>Available</freelance>
+  </about>
+
+  <services>
+    <service>
+      <icon>📱</icon>
+      <title>Mobile Development</title>
+      <description>Flutter/Dart + Firebase apps with clean UI.</description>
+    </service>
+    <service>
+      <icon>🧠</icon>
+      <title>Backend Development</title>
+      <description>REST APIs with Spring Boot / Python.</description>
+    </service>
+    <service>
+      <icon>🌐</icon>
+      <title>Web Development</title>
+      <description>HTML, CSS, JavaScript, PHP.</description>
+    </service>
+    <service>
+      <icon>🧰</icon>
+      <title>Tools & DevOps</title>
+      <description>Git, Docker, FFmpeg, RabbitMQ.</description>
+    </service>
+  </services>
+
+  <projects>
+    <project>
+      <title>Project One</title>
+      <category>Mobile App</category>
+      <image>https://images.unsplash.com/photo-1558655146-9f40138edfeb?w=500&amp;h=400&amp;fit=crop</image>
+    </project>
+    <project>
+      <title>Project Two</title>
+      <category>Backend</category>
+      <image>https://images.unsplash.com/photo-1542744173-8e7e53415bb0?w=500&amp;h=400&amp;fit=crop</image>
+    </project>
+  </projects>
+
+  <footer>
+    <name>Your Name</name>
+  </footer>
+</profile>

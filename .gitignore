@@ -1,0 +1,10 @@
+# Private data (do not commit)
+/data/profile.xml
+
+# Optional private assets
+/assets/private/
+
+# Common local files
+.DS_Store
+Thumbs.db
+*.log
