@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<profile>
+  <hero>
+    <subtitle>HELLO I'M</subtitle>
+    <name>Pratik Maharjan</name>
+    <tagline>Tech Enthusiast | Flutter Developer</tagline>
+    <description>
+      I build robust web and mobile applications that solve real-world problems.
+    </description>
+    <cta>Discover Now</cta>
+    <image>../assets/profile/profile_picture.jpg</image>
+  </hero>
+
+  <about>
+    <image>../assets/profile/profile_picture.jpg</image>
+    <name>Pratik Maharjan</name>
+    <age>24 yrs</age>
+    <description>
+     I am a Junior Flutter Developer at Codesc Nepal, working on enterprise-scale ERP systems for international clients. With a BCA background from Nesfield International College and hands-on experience across the full development stack, I build production mobile and web applications that solve real-world business challenges.
+My technical expertise spans mobile development (Flutter, Dart), web technologies (HTML, CSS, JavaScript, PHP), backend systems (Java, Python, Spring Boot, Firebase), and performance optimization at the systems level. I'm passionate about writing efficient, scalable code—demonstrated through my custom C/WebAssembly animation engine that achieves 60fps performance with hand-optimized assembly code.
+Previously, I contributed to the StackFood mobile app during my internship at Bluefox, and have built systems including a Trek Management platform, Vendor Management System, and video streaming solutions. I combine framework expertise with low-level optimization skills to deliver high-performance applications.
+    </description>
+    <address>Lalitpur District, Nepal</address>
+    <freelance>Available</freelance>
+    <email></email>
+    <phone></phone>
+  </about>
+
+  <services>
+    <service>
+      <icon>📱</icon>
+      <title>Flutter &amp; Firebase</title>
+      <description>Mobile apps with Flutter/Dart, Firebase Auth &amp; Cloud Firestore.</description>
+    </service>
+    <service>
+      <icon>🧠</icon>
+      <title>Backend (Spring Boot)</title>
+      <description>Secure REST APIs with Spring Boot, DTO/service/repo patterns.</description>
+    </service>
+    <service>
+      <icon>🌐</icon>
+      <title>Web Development</title>
+      <description>HTML, CSS, JavaScript, PHP — clean UI with solid fundamentals.</description>
+    </service>
+    <service>
+      <icon>🧰</icon>
+      <title>Tools &amp; Systems</title>
+      <description>Git, Docker, RabbitMQ, FFmpeg, PostgreSQL/MySQL, cloud storage.</description>
+    </service>
+  </services>
+
+  <projects>
+    <project>
+      <title>StackFood (Clone)</title>
+      <category>Flutter / Firebase</category>
+      <image>https://imgs.search.brave.com/D-NagEIbQsq-XieCruj77c3SjPpmBdPX4fNjb7M-Wmw/rs:fit:860:0:0:0/g:ce/aHR0cHM6Ly9zdGF0/aWMudmVjdGVlenku/Y29tL3N5c3RlbS9y/ZXNvdXJjZXMvdGh1/bWJuYWlscy8wNTcv/OTQzLzc0Ni9zbWFs/bC9hLXRhYmxlLXdp/dGgtZm9vZC1hbmQt/d2luZS1vbi1pdC1m/cmVlLXBob3RvLmpw/Zw?w=500&amp;h=400&amp;fit=crop</image>
+      <link>https://github.com/AMNTDEVIL/Stackfood2</link>
+    </project>
+    <project>
+      <title>Video Streaming Platform</title>
+      <category>Flutter + Spring Boot + RabbitMQ + FFmpeg</category>
+      <image>../assets/photos/project.webp</image>
+      <link>https://gitlab.com/amntdevil-group/VideoStreamingApp</link>
+    </project>
+    <project>
+      <title>Vendor Management System</title>
+      <category>Flutter / Firebase</category>
+      <image>https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=500&amp;h=400&amp;fit=crop</image>
+      <link>https://github.com/AMNTDEVIL/vms</link>
+    </project>
+  </projects>
+
+  <footer>
+    <name>Pratik Maharjan</name>
+  </footer>
+</profile>
