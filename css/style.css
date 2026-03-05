@@ -1107,23 +1107,93 @@ body::after {
     margin-bottom: 1.5rem;
     line-height: 1.2;
     font-family: var(--font-display);
-    background: var(--gradient-accent);
-    background-size: 300% 300%;
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-    animation: gradientShimmer 4s ease infinite;
-    perspective: 600px;
+
+    color: #090101;
+    animation: bulbFlicker 2.5s infinite;
 }
 
-/* If characters are wrapped individually, show their own colors
-   (modern browsers): remove the clipped gradient so span colors render. */
+/* Force every character to use the same color */
+.hero-title .anim-char {
+    color: inherit !important;
+    text-shadow: inherit !important;
+}
+
+/* Remove the rule that breaks the unified color */
 .hero-title:has(.anim-char) {
     background: none !important;
-    -webkit-background-clip: unset !important;
-    background-clip: unset !important;
-    -webkit-text-fill-color: unset !important;
-    color: var(--text-dark) !important;
+    -webkit-text-fill-color: inherit !important;
+    color: inherit !important;
+}
+
+/* Lightbulb flicker animation */
+@keyframes bulbFlicker {
+
+    0% {
+        color: #777;
+        /* grey */
+        text-shadow: none;
+    }
+
+    10% {
+        color: #ffffff;
+        /* white bright */
+        text-shadow:
+            0 0 5px #fff,
+            0 0 10px #fff,
+            0 0 20px #fff;
+    }
+
+    20% {
+        color: #8b4513;
+        /* brown */
+        text-shadow: 0 0 4px #5a2d0c;
+    }
+
+    30% {
+        color: #ff2a2a;
+        /* red flash */
+        text-shadow:
+            0 0 5px #ff2a2a,
+            0 0 15px #ff2a2a;
+    }
+
+    40% {
+        color: #999;
+        /* dim grey */
+        text-shadow: none;
+    }
+
+    50% {
+        color: #ffffff;
+        text-shadow:
+            0 0 8px #fff,
+            0 0 18px #fff,
+            0 0 30px #fff;
+    }
+
+    65% {
+        color: #8b4513;
+        text-shadow: 0 0 6px #5a2d0c;
+    }
+
+    75% {
+        color: #ff3b3b;
+        text-shadow:
+            0 0 10px #ff3b3b,
+            0 0 20px #ff3b3b;
+    }
+
+    90% {
+        color: #777;
+        text-shadow: none;
+    }
+
+    100% {
+        color: #ffffff;
+        text-shadow:
+            0 0 6px #fff,
+            0 0 12px #fff;
+    }
 }
 
 @keyframes gradientShimmer {
