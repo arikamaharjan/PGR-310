@@ -701,6 +701,137 @@
         batchBtn.style.marginLeft = '10px';
         controls.appendChild(batchBtn);
 
+        // ==================================================================
+        // TRANSITION FPS TEST
+        // ==================================================================
+        const createTransitionTestUI = () => {
+            const btn = document.createElement('button');
+            btn.textContent = '🎞️ Run Transition Test';
+            btn.style.marginLeft = '10px';
+            btn.onclick = () => runTransitionTest();
+            controls.appendChild(btn);
+        };
+
+        const runTransitionTest = async ({ cycles = 6, transitionMs = 480 } = {}) => {
+            // Create overlay test area
+            const container = document.createElement('div');
+            container.style.position = 'fixed';
+            container.style.left = '50%';
+            container.style.top = '50%';
+            container.style.transform = 'translate(-50%,-50%)';
+            container.style.width = '820px';
+            container.style.height = '420px';
+            container.style.zIndex = 200000;
+            container.style.pointerEvents = 'none';
+            container.style.borderRadius = '12px';
+            container.style.overflow = 'hidden';
+            container.style.boxShadow = '0 30px 80px rgba(2,6,23,0.6)';
+
+            // Two panels
+            const a = document.createElement('div');
+            const b = document.createElement('div');
+            [a,b].forEach((el)=>{
+                el.style.position = 'absolute';
+                el.style.inset = '0';
+                el.style.display = 'flex';
+                el.style.alignItems = 'center';
+                el.style.justifyContent = 'center';
+                el.style.fontFamily = 'Space Grotesk, sans-serif';
+                el.style.fontSize = '28px';
+                el.style.fontWeight = '700';
+                el.style.color = '#fff';
+                el.style.transition = `opacity ${transitionMs}ms cubic-bezier(.2,.8,.2,1), transform ${transitionMs}ms cubic-bezier(.2,.8,.2,1)`;
+                el.style.pointerEvents = 'none';
+            });
+
+            a.style.background = 'linear-gradient(180deg,#111827,#0b1220)';
+            a.textContent = 'Template A — Current';
+            b.style.background = 'radial-gradient(circle at 20% 20%, rgba(168,85,247,0.35), rgba(59,130,246,0.12)), #070215';
+            b.textContent = 'Template B — Figma';
+
+            // initial states
+            a.style.opacity = '1';
+            a.style.transform = 'translateY(0)';
+            b.style.opacity = '0';
+            b.style.transform = 'translateY(10px)';
+
+            container.appendChild(a);
+            container.appendChild(b);
+            document.body.appendChild(container);
+
+            // Capture frames during each transition
+            const allFrameDeltas = [];
+
+            const sleep = (ms) => new Promise(r=>setTimeout(r, ms));
+
+            for(let i=0;i<cycles;i++){
+                const from = (i%2===0)?a:b;
+                const to = (i%2===0)?b:a;
+
+                // start capture
+                let running = true;
+                let lastTs = performance.now();
+                const capture = (ts) => {
+                    if(!running) return;
+                    const delta = ts - lastTs;
+                    lastTs = ts;
+                    allFrameDeltas.push(delta);
+                    requestAnimationFrame(capture);
+                };
+                requestAnimationFrame(capture);
+
+                // trigger transition
+                from.style.opacity = '0';
+                from.style.transform = 'translateY(-8px)';
+                to.style.opacity = '1';
+                to.style.transform = 'translateY(0)';
+
+                // wait for transition + small buffer
+                await sleep(transitionMs + 80);
+
+                running = false;
+            }
+
+            // analyze
+            if(allFrameDeltas.length === 0){
+                alert('No frames captured');
+                container.remove();
+                return;
+            }
+            const maxDelta = Math.max(...allFrameDeltas);
+            const avgDelta = allFrameDeltas.reduce((a,b)=>a+b,0)/allFrameDeltas.length;
+            const avgFps = 1000/avgDelta;
+            const minFps = 1000/maxDelta;
+            const below55 = allFrameDeltas.filter(d=> (1000/d) < 55 ).length;
+            const totalFrames = allFrameDeltas.length;
+
+            // show results
+            const res = document.createElement('div');
+            res.className = 'card';
+            res.style.position = 'fixed';
+            res.style.right = '18px';
+            res.style.bottom = '18px';
+            res.style.zIndex = 200001;
+            res.style.maxWidth = '360px';
+            res.innerHTML = `
+                <h3 style="margin-bottom:6px">Transition Test Results</h3>
+                <div style="font-size:0.95rem;color:#cbd5e1">Cycles: ${cycles} | Frames sampled: ${totalFrames}</div>
+                <div style="margin-top:8px"><strong>Avg FPS:</strong> ${avgFps.toFixed(1)}</div>
+                <div><strong>Min FPS:</strong> ${minFps.toFixed(1)}</div>
+                <div><strong>Frames <55fps:</strong> ${below55} (${((below55/totalFrames)*100).toFixed(1)}%)</div>
+                <div style="margin-top:8px;color:var(--muted);font-size:0.85rem">Note: This measures the browser's frame loop while CSS transitions run. If avg FPS &ge; 55, transitions feel smooth.</div>
+                <div style="margin-top:10px;text-align:right"><button id="closeTransRes">Close</button></div>
+            `;
+            document.body.appendChild(res);
+            document.getElementById('closeTransRes').onclick = ()=>{ res.remove(); };
+
+            // cleanup
+            container.remove();
+            console.log('Transition frame deltas (ms):', allFrameDeltas.slice(-200));
+        };
+
+        createTransitionTestUI();
+
         // ======================================================================
         // STRESS TEST — animate 500 elements on canvas
         // ======================================================================

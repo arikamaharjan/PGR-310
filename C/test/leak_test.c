@@ -33,9 +33,16 @@ int main(int argc, char **argv) {
         vector2D sub = vector2D_sub(a, b);
         vector2D scaled = vector2D_scalar(add, s);
 
-        acc = vector2D_add(acc, scaled);
-        accDot += vector2D_dot(sub, scaled);
-        accMag += vector2D_magnitude(scaled);
+        // Test pointer variants
+        vector2D add_p, sub_p, scaled_p;
+        vector2D_add_p(&add_p, &a, &b);
+        vector2D_sub_p(&sub_p, &a, &b);
+        vector2D_scalar_p(&scaled_p, &add_p, s);
+
+        // Simple validation (can be more thorough, but this ensures they are linked and working)
+        acc = vector2D_add(acc, scaled_p);
+        accDot += vector2D_dot(sub_p, scaled_p);
+        accMag += vector2D_magnitude(scaled_p);
 
         if ((i % (10ULL * 1000ULL * 1000ULL)) == 0 && i != 0) {
             fprintf(stderr, "progress: %llu/%llu\n", (unsigned long long)i, (unsigned long long)iters);

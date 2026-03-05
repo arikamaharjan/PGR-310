@@ -13,11 +13,13 @@ typedef struct FxParticle {
     float r;
     float hue;
     float a;
+    float phase;
+    float phase_speed;
 } FxParticle;
 
 enum {
-    FX_MAX_PARTICLES = 180,
-    FX_PARTICLE_STRIDE_FLOATS = 7,
+    FX_MAX_PARTICLES = 420,
+    FX_PARTICLE_STRIDE_FLOATS = 9, /* x,y,vx,vy,r,hue,a,phase,phase_speed */
 };
 
 static FxParticle g_particles[FX_MAX_PARTICLES];
@@ -63,8 +65,9 @@ static void particles_reset(void) {
         return;
     }
 
-    const float density = (g_width < 768) ? 55.0f : 95.0f;
-    const int extra = (g_width < 768) ? 20 : 45;
+    /* Increase density for an underwater feel */
+    const float density = (g_width < 768) ? 95.0f : 170.0f;
+    const int extra = (g_width < 768) ? 40 : 90;
     const float area_mpx = ((float)g_width * (float)g_height) / 1000000.0f;
     int count = (int)floorf(area_mpx * density) + extra;
     if (count > FX_MAX_PARTICLES) count = FX_MAX_PARTICLES;
@@ -75,11 +78,14 @@ static void particles_reset(void) {
     for (int i = 0; i < g_particle_count; i++) {
         g_particles[i].x = rng_range(0.0f, (float)g_width);
         g_particles[i].y = rng_range(0.0f, (float)g_height);
-        g_particles[i].vx = rng_range(-0.22f, 0.22f);
-        g_particles[i].vy = rng_range(-0.22f, 0.22f);
-        g_particles[i].r = rng_range(1.1f, 2.4f);
-        g_particles[i].hue = rng_range(210.0f, 270.0f);
-        g_particles[i].a = rng_range(0.15f, 0.55f);
+        /* Slight horizontal drift and gentle upward movement */
+        g_particles[i].vx = rng_range(-0.08f, 0.08f);
+        g_particles[i].vy = -rng_range(0.02f, 0.18f);
+        g_particles[i].r = rng_range(1.4f, 4.6f);
+        g_particles[i].hue = rng_range(180.0f, 260.0f);
+        g_particles[i].a = rng_range(0.08f, 0.9f);
+        g_particles[i].phase = rng_range(0.0f, 6.28318530f);
+        g_particles[i].phase_speed = rng_range(0.005f, 0.035f);
     }
 
     g_pointer_x = (float)g_width * 0.5f;
@@ -144,20 +150,29 @@ void portfoliofx_step(float dt) {
 
         if (!g_is_touch && dist2 < influence_r2) {
             const float dist = sqrtf(dist2) + 1e-6f;
-            const float f = (1.0f - (dist / influence_radius)) * 0.045f;
+            const float f = (1.0f - (dist / influence_radius)) * 0.06f;
             p->vx += (dx / dist) * f;
-            p->vy += (dy / dist) * f;
+            p->vy += (dy / dist) * f * 0.6f;
         }
+
+        /* gentle upward current */
+        p->vy -= 0.006f;
+
+        /* per-particle sway using phase */
+        p->phase += p->phase_speed;
+        p->x += sinf(p->phase) * 0.6f;
 
         p->x += p->vx;
         p->y += p->vy;
-        p->vx *= 0.985f;
-        p->vy *= 0.985f;
 
-        if (p->x < -20.0f) p->x = w + 20.0f;
-        if (p->x > w + 20.0f) p->x = -20.0f;
-        if (p->y < -20.0f) p->y = h + 20.0f;
-        if (p->y > h + 20.0f) p->y = -20.0f;
+        /* subtle damping to keep motion soft */
+        p->vx *= 0.992f;
+        p->vy *= 0.994f;
+
+        if (p->x < -40.0f) p->x = w + 40.0f;
+        if (p->x > w + 40.0f) p->x = -40.0f;
+        if (p->y < -60.0f) p->y = h + 60.0f;
+        if (p->y > h + 60.0f) p->y = -60.0f;
     }
 }
 

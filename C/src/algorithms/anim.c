@@ -19,7 +19,11 @@ float anim_clamp01(float x) {
 
 float anim_ease_in_out_cubic(float t) {
     t = clampf(t, 0.0f, 1.0f);
-    return t < 0.5f ? 4.0f * t * t * t : 1.0f - powf(-2.0f * t + 2.0f, 3.0f) * 0.5f;
+    if (t < 0.5f) return 4.0f * t * t * t;
+    float u = -2.0f * t + 2.0f;
+    /* compute u^3 directly (faster than powf) */
+    float u3 = u * u * u;
+    return 1.0f - (u3 * 0.5f);
 }
 
 float anim_smoothstep(float edge0, float edge1, float x) {
@@ -122,7 +126,9 @@ float anim_ease_out_elastic(float t) {
     t = clampf(t, 0.0f, 1.0f);
     if (t == 0.0f || t == 1.0f) return t;
     const float c4 = (2.0f * (float)M_PI) / 3.0f;
-    return powf(2.0f, -10.0f * t) * sinf((t * 10.0f - 0.75f) * c4) + 1.0f;
+    /* use exp2f for powers of two (faster than powf) */
+    float p = exp2f(-10.0f * t);
+    return p * sinf((t * 10.0f - 0.75f) * c4) + 1.0f;
 }
 
 float anim_ease_out_bounce(float t) {
@@ -147,14 +153,20 @@ float anim_ease_out_back(float t) {
     t = clampf(t, 0.0f, 1.0f);
     const float c1 = 1.70158f;
     const float c3 = c1 + 1.0f;
-    return 1.0f + c3 * powf(t - 1.0f, 3.0f) + c1 * powf(t - 1.0f, 2.0f);
+    float u = t - 1.0f;
+    float u2 = u * u;
+    float u3 = u2 * u;
+    return 1.0f + c3 * u3 + c1 * u2;
 }
 
 float anim_ease_in_out_quart(float t) {
     t = clampf(t, 0.0f, 1.0f);
-    return t < 0.5f
-        ? 8.0f * t * t * t * t
-        : 1.0f - powf(-2.0f * t + 2.0f, 4.0f) * 0.5f;
+    if (t < 0.5f) return 8.0f * t * t * t * t;
+    float u = -2.0f * t + 2.0f;
+    /* compute u^4 directly */
+    float u2 = u * u;
+    float u4 = u2 * u2;
+    return 1.0f - (u4 * 0.5f);
 }
 
 float anim_spring(float current, float target, float velocity,

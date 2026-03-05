@@ -6,6 +6,19 @@
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 const byId = (id) => document.getElementById(id);
+// When true, only run animations backed by C/WASM; JS-only animations will be skipped
+const WASM_ONLY_ANIM = true;
+
+function runWasmOnlyOrFinalize(runFn, finalizeFn) {
+    // runFn: function to run when WASM is available
+    // finalizeFn: apply final state immediately when WASM unavailable
+    if (window.Module && typeof window.Module.cwrap === 'function') {
+        try { return runFn(); } catch (e) { finalizeFn && finalizeFn(); }
+    } else {
+        if (WASM_ONLY_ANIM) { finalizeFn && finalizeFn(); return; }
+        return runFn();
+    }
+}
 
 // ============================================================================
 // XML DATA LOADER
@@ -134,31 +147,130 @@ const loadProfileFromXml = async () => {
 // ============================================================================
 // WASM BINDINGS
 // ============================================================================
-const waitForWasm = () => new Promise((resolve) => {
-    // Resolve immediately if both the runtime-ready flag and cwrap are present.
-    if (window.__vector2dWasmReady && window.Module?.cwrap) return resolve();
+// Centralized WASM <-> JS bridge: readiness promise, cached cwrap, memory helpers
+(function () {
+    if (window.Wasm) return;
+    const bridge = {
+        // resolves with Module (or {} on timeout)
+        ready: new Promise((resolve) => {
+            let settled = false;
+            const settle = (mod) => { if (settled) return; settled = true; resolve(mod || {}); window.dispatchEvent(new Event('vector2d-wasm-ready')); };
 
-    // If cwrap is already present (but the inline flag wasn't set), treat as ready.
-    if (window.Module?.cwrap) {
-        window.__vector2dWasmReady = true;
-        return resolve();
-    }
+            // If Module already ready
+            if (window.Module && typeof window.Module.cwrap === 'function') return settle(window.Module);
 
-    // Otherwise wait for the explicit event, but also poll for `Module.cwrap`
-    // to guard against the event being dispatched before this listener is added.
-    let settled = false;
-    const settle = () => { if (settled) return; settled = true; clearInterval(poll); window.removeEventListener('vector2d-wasm-ready', onEvent); resolve(); };
-    const onEvent = () => settle();
-    window.addEventListener('vector2d-wasm-ready', onEvent, { once: true });
+            // Hook Emscripten onRuntimeInitialized if present
+            if (window.Module && typeof window.Module.onRuntimeInitialized === 'function') {
+                const orig = window.Module.onRuntimeInitialized;
+                window.Module.onRuntimeInitialized = function () { try { orig(); } catch (e) { } settle(window.Module); };
+            }
 
-    const poll = setInterval(() => {
-        if (window.Module?.cwrap) settle();
-    }, 50);
+            // Listen for explicit event (other code may dispatch)
+            const onEvent = () => settle(window.Module);
+            window.addEventListener('vector2d-wasm-ready', onEvent, { once: true });
 
-    // Safety: after a reasonable timeout resolve anyway to avoid permanent hang
-    // during development; errors can still be surfaced elsewhere.
-    setTimeout(() => settle(), 5000);
-});
+            // Poll for Module.cwrap as a fallback
+            const poll = setInterval(() => {
+                if (window.Module && typeof window.Module.cwrap === 'function') {
+                    clearInterval(poll);
+                    window.removeEventListener('vector2d-wasm-ready', onEvent);
+                    return settle(window.Module);
+                }
+            }, 50);
+
+            // Give up after timeout (resolve with whatever Module exists)
+            setTimeout(() => { clearInterval(poll); window.removeEventListener('vector2d-wasm-ready', onEvent); settle(window.Module); }, 5000);
+        }),
+
+        // cwrap cache and helper
+        _cache: {},
+        cwrap(name, ret, argTypes) {
+            const k = `${name}|${ret}|${(argTypes || []).join(',')}`;
+            if (this._cache[k]) return this._cache[k];
+            if (!window.Module || typeof window.Module.cwrap !== 'function') {
+                const err = function () { throw new Error('WASM cwrap not available: ' + name); };
+                this._cache[k] = err;
+                return err;
+            }
+            const fn = window.Module.cwrap(name, ret, argTypes || []);
+            this._cache[k] = fn;
+            return fn;
+        },
+
+        // Memory helpers (lightweight — avoid allocating views in hot loops)
+        heapF32() {
+            return (window.Module && window.Module.HEAPF32) ? window.Module.HEAPF32 : (typeof HEAPF32 !== 'undefined' ? HEAPF32 : null);
+        },
+        // return { heap, base } where base is the starting float index for ptr
+        getHeapF32AndBase(ptr) {
+            const heap = this.heapF32();
+            if (!heap || !ptr) return { heap: new Float32Array(0), base: 0 };
+            return { heap, base: ptr >>> 2 };
+        },
+        // Backward-compatible: allocate a view (use sparingly)
+        float32View(ptr, count) {
+            if (!ptr || !window.Module || !window.Module.HEAPF32) return new Float32Array(0);
+            return new Float32Array(window.Module.HEAPF32.buffer, ptr, count);
+        },
+
+        // Convenience wrapper for functions that expose vector components separately
+        makeVec2Wrapper(xName, yName, argTypes) {
+            const fx = () => { throw new Error('WASM not ready'); };
+            const fy = () => { throw new Error('WASM not ready'); };
+            const wrapper = (...args) => ({ x: bridge.cwrap(xName, 'number', argTypes)(...args), y: bridge.cwrap(yName, 'number', argTypes)(...args) });
+            return wrapper;
+        }
+    };
+    window.Wasm = bridge;
+})();
+const waitForWasm = () => {
+    // Prefer the centralized bridge when present
+    if (window.Wasm && window.Wasm.ready) return window.Wasm.ready;
+
+    // Fallback to legacy behavior if bridge not yet injected
+    return new Promise((resolve) => {
+        if (window.__vector2dWasmReady && window.Module?.cwrap) return resolve();
+        if (window.Module?.cwrap) { window.__vector2dWasmReady = true; return resolve(); }
+
+        let settled = false;
+        const settle = () => { if (settled) return; settled = true; clearInterval(poll); window.removeEventListener('vector2d-wasm-ready', onEvent); resolve(); };
+        const onEvent = () => settle();
+        window.addEventListener('vector2d-wasm-ready', onEvent, { once: true });
+
+        const poll = setInterval(() => { if (window.Module?.cwrap) settle(); }, 50);
+        setTimeout(() => settle(), 5000);
+    });
+};
+
+// Initialize cached math bindings from WASM (call after bridge created)
+const initMathWasmBindings = async () => {
+    if (!window.Wasm) return null;
+    await (window.Wasm.ready || Promise.resolve());
+    try {
+        const safeCwrap = (name, ret, args) => {
+            try {
+                if (window.Wasm && typeof window.Wasm.cwrap === 'function') return window.Wasm.cwrap(name, ret, args);
+                if (window.Module && typeof window.Module.cwrap === 'function') return window.Module.cwrap(name, ret, args);
+            } catch (e) { /* ignore */ }
+            return null;
+        };
+
+        const M = {
+            clamp01: safeCwrap('anim_clamp01', 'number', ['number']) || (x => Math.max(0, Math.min(1, x))),
+            lerp: safeCwrap('anim_lerp', 'number', ['number', 'number', 'number']) || ((a, b, t) => a + (b - a) * Math.max(0, Math.min(1, t))),
+            easeInOutCubic: safeCwrap('anim_ease_in_out_cubic', 'number', ['number']) || (t => { t = Math.max(0, Math.min(1, t)); return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }),
+            smoothstep: safeCwrap('anim_smoothstep', 'number', ['number', 'number', 'number']) || ((e0, e1, x) => { if (e0 === e1) return x < e0 ? 0 : 1; let t = (x - e0) / (e1 - e0); t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); }),
+            noise1: safeCwrap('anim_noise1', 'number', ['number']) || (x => { const i = Math.floor(x); const f = x - i; const a = Math.abs(Math.sin(i * 12.9898) * 43758.5453) % 1; const b = Math.abs(Math.sin((i + 1) * 12.9898) * 43758.5453) % 1; const t = f * f * (3 - 2 * f); return a + (b - a) * t; }),
+            wave: safeCwrap('anim_wave', 'number', ['number', 'number', 'number', 'number']) || ((t, freq, amp, phase) => Math.sin(t * freq + phase) * amp),
+            expSmooth: safeCwrap('anim_exp_smooth', 'number', ['number', 'number', 'number', 'number']) || ((current, target, lambda, dt) => { if (dt <= 0) return current; const k = Math.exp(-lambda * dt); return target + (current - target) * k; }),
+            magnitude_xy: safeCwrap('vector2D_magnitude_xy', 'number', ['number', 'number']) || ((dx, dy) => Math.hypot(dx, dy)),
+            rotation_x: safeCwrap('vector2D_rotation_x', 'number', ['number', 'number', 'number']) || ((x, y, a) => x * Math.cos(a) - y * Math.sin(a)),
+            rotation_y: safeCwrap('vector2D_rotation_y', 'number', ['number', 'number', 'number']) || ((x, y, a) => x * Math.sin(a) + y * Math.cos(a)),
+        };
+        window.MathWasm = M;
+        return M;
+    } catch (e) { return null; }
+};
 
 const initAnimApi = () => {
     if (!window.Module?.cwrap) return null;
@@ -240,6 +352,107 @@ const initStressApi = () => {
 };
 
 // ============================================================================
+// WASM-driven Template Animator (glue for `vector2D` animation API)
+// ============================================================================
+const initVector2DAnimApi = () => {
+    if (!window.Module?.cwrap) return null;
+    const has = (n) => typeof window.Module[`_${n}`] === 'function';
+    if (!has('animation_set_points')) return null;
+    try {
+        const w = window.Module.cwrap;
+        return {
+            setPoints: w('animation_set_points', null, ['number', 'number', 'number', 'number']),
+            setDuration: w('animation_set_duration', null, ['number']),
+            step: w('animation_step', null, ['number']),
+            getX: w('animation_get_x', 'number', []),
+            getY: w('animation_get_y', 'number', []),
+            reset: w('animation_reset', null, []),
+        };
+    } catch { return null; }
+};
+
+// Animate an element from one DOMRect origin to another using WASM math.
+// el: element to move (should be positioned absolute/relative to same container)
+// fromRect/toRect: DOMRect coordinates (use getBoundingClientRect())
+// duration: seconds
+const animateElementBetweenRectsWasm = async (el, fromRect, toRect, duration = 0.48) => {
+    await waitForWasm();
+
+    // Prefer handle-based API when available
+    const hasHandleApi = window.Module?.cwrap && typeof window.Module[`_animation_handle_create`] === 'function';
+    if (hasHandleApi) {
+        try {
+            const w = window.Module.cwrap;
+            const create = w('animation_handle_create', 'number', ['number', 'number', 'number', 'number', 'number']);
+            const step = w('animation_handle_step', null, ['number', 'number']);
+            const getX = w('animation_handle_get_x', 'number', ['number']);
+            const getY = w('animation_handle_get_y', 'number', ['number']);
+            const destroy = w('animation_handle_destroy', null, ['number']);
+
+            const handle = create(fromRect.x, fromRect.y, toRect.x, toRect.y, duration);
+            if (!handle) throw new Error('no-handle');
+
+            let last = performance.now();
+            return new Promise((res) => {
+                const loop = (ts) => {
+                    const dt = (ts - last) / 1000;
+                    last = ts;
+                    step(handle, dt);
+                    const x = getX(handle);
+                    const y = getY(handle);
+                    el.style.transform = `translate(${x - fromRect.x}px, ${y - fromRect.y}px)`;
+                    // stop when handle reached end (time >= duration)
+                    // use numeric proximity check
+                    if (Math.abs(x - toRect.x) < 0.5 && Math.abs(y - toRect.y) < 0.5) {
+                        destroy(handle);
+                        return res();
+                    }
+                    requestAnimationFrame(loop);
+                };
+                requestAnimationFrame(loop);
+            });
+        } catch (err) {
+            // fallthrough to lower-level API
+        }
+    }
+
+    // Fallback to the older single-global API if present
+    const api = initVector2DAnimApi();
+    if (api) {
+        api.setPoints(fromRect.x, fromRect.y, toRect.x, toRect.y);
+        api.setDuration(duration);
+        let last = performance.now();
+        return new Promise((res) => {
+            const loop = (ts) => {
+                const dt = (ts - last) / 1000;
+                last = ts;
+                api.step(dt);
+                const x = api.getX();
+                const y = api.getY();
+                el.style.transform = `translate(${x - fromRect.x}px, ${y - fromRect.y}px)`;
+                if ((api.getX() === toRect.x && api.getY() === toRect.y) || (ts - (last - dt * 1000)) / 1000 >= duration) return res();
+                requestAnimationFrame(loop);
+            };
+            requestAnimationFrame(loop);
+        });
+    }
+
+    // Finally fall back to easing API (prefers WASM math via getEasing())
+    let t0 = performance.now();
+    return new Promise((res) => {
+        const ease = getEasing();
+        const loop = (ts) => {
+            const p = Math.min(1, (ts - t0) / (duration * 1000));
+            const x = ease.lerp(fromRect.x, toRect.x, p);
+            const y = ease.lerp(fromRect.y, toRect.y, p);
+            el.style.transform = `translate(${x - fromRect.x}px, ${y - fromRect.y}px)`;
+            if (p < 1) requestAnimationFrame(loop); else res();
+        };
+        requestAnimationFrame(loop);
+    });
+};
+
+// ============================================================================
 // JS EASING FALLBACKS
 // ============================================================================
 const clamp01 = (x) => Math.max(0, Math.min(1, x));
@@ -266,25 +479,545 @@ const getEasing = () => {
     return _easing;
 };
 
-waitForWasm().then(() => { _easing = null; getEasing(); }).catch(() => { });
+// ============================================================================
+// Auto-rotate templates every 30s (uses CSS crossfade + optional WASM image move)
+// ============================================================================
+const initTemplateRotator = () => {
+    const t1 = document.querySelector('.hero-container');
+    const t2 = document.getElementById('template2');
+    if (!t1 || !t2) return;
+
+    // Wrap hero container into a template element to unify classes if not already
+    let wrapper1 = t1.closest('.template');
+    if (!wrapper1) {
+        wrapper1 = document.createElement('div');
+        wrapper1.className = 'template is-active';
+        t1.parentNode.insertBefore(wrapper1, t1);
+        wrapper1.appendChild(t1);
+    }
+    // ensure template2 exists and is hidden
+    t2.classList.remove('is-active');
+
+    const switchTo = async (fromEl, toEl) => {
+        if (fromEl === toEl) return;
+        fromEl.classList.add('is-leaving');
+        fromEl.classList.remove('is-active');
+        toEl.classList.add('is-active');
+        toEl.classList.remove('is-leaving');
+
+        // optional: animate hero image between rects using WASM math for a smoother perceived transition
+        try {
+            const fromImg = fromEl.querySelector('.image-frame img, .image-frame');
+            const toImg = toEl.querySelector('img, .t2-preview img');
+            if (fromImg && toImg && typeof animateElementBetweenRectsWasm === 'function') {
+                const fr = fromImg.getBoundingClientRect();
+                const tr = toImg.getBoundingClientRect();
+                // visually place a temporary clone and animate it
+                const clone = fromImg.cloneNode(true);
+                clone.style.position = 'fixed';
+                clone.style.left = `${fr.left}px`;
+                clone.style.top = `${fr.top}px`;
+                clone.style.width = `${fr.width}px`;
+                clone.style.height = `${fr.height}px`;
+                clone.style.margin = '0';
+                clone.style.zIndex = 99999;
+                document.body.appendChild(clone);
+                await animateElementBetweenRectsWasm(clone, fr, tr, 0.48);
+                clone.remove();
+            }
+        } catch (e) { /* ignore */ }
+
+        // cleanup leaving state after animation time
+        setTimeout(() => fromEl.classList.remove('is-leaving'), 520);
+    };
+
+    // initial states
+    wrapper1.classList.add('is-active');
+    t2.classList.remove('is-active');
+
+    let showingFirst = true;
+    const periodMs = 30000; // 30 seconds
+    setInterval(() => {
+        if (showingFirst) switchTo(wrapper1, t2); else switchTo(t2, wrapper1);
+        showingFirst = !showingFirst;
+    }, periodMs);
+};
+
+// Initialize rotator after profile loaded and DOM ready
+window.addEventListener('profile-loaded', () => setTimeout(initTemplateRotator, 300));
+document.addEventListener('DOMContentLoaded', () => setTimeout(initTemplateRotator, 600));
+
+// ============================================================================
+// Math-driven UI animations (prefer WASM easing/math when available)
+// ============================================================================
+const initMathAnimations = () => {
+    const easing = getEasing();
+    const orb = document.getElementById('t2Orb');
+    const heroFrame = document.querySelector('.image-frame');
+    const shapes = Array.from(document.querySelectorAll('.floating-shapes .shape'));
+
+    if (!orb && !heroFrame && shapes.length === 0) return;
+
+    let last = performance.now();
+
+    const tick = (ts) => {
+        const dt = (ts - last) / 1000;
+        last = ts;
+        const now = ts / 1000;
+
+        // Orb: subtle pulsing + slow orbit offset
+        if (orb) {
+            const freq = 0.35; // Hz
+            const raw = window.MathWasm ? (window.MathWasm.wave(now, Math.PI * 2 * freq, 1, 0) + 1) * 0.5 : (Math.sin(now * Math.PI * 2 * freq) + 1) * 0.5; // 0..1
+            const e = easing.easeInOutCubic(raw);
+            const scale = 0.92 + e * 0.18;
+            const y = -10 * e;
+            orb.style.transform = `translateY(${y.toFixed(2)}px) scale(${scale.toFixed(3)})`;
+            orb.style.filter = `blur(${6 - e * 2}px)`;
+        }
+
+        // Hero image: gentle bobbing
+        if (heroFrame) {
+            const freqH = 0.22;
+            const rawH = window.MathWasm ? (window.MathWasm.wave(now, Math.PI * 2 * freqH, 1, 0.4) + 1) * 0.5 : (Math.sin(now * Math.PI * 2 * freqH + 0.4) + 1) * 0.5;
+            const eH = easing.easeOutBack(rawH);
+            const y = -6 * eH;
+            heroFrame.style.transform = `translateY(${y.toFixed(2)}px)`;
+        }
+
+        // Floating shapes: micro parallax using smooth noise-ish motion
+        if (shapes.length) {
+            shapes.forEach((s, i) => {
+                const phase = (i % 5) * 0.7;
+                const amp = (5 + (i % 3) * 3);
+                const freqS = (0.1 + (i % 4) * 0.02) * Math.PI * 2;
+                const rawS = window.MathWasm ? (window.MathWasm.wave(now, freqS, 1, phase) + 1) * 0.5 : (Math.sin(now * (0.1 + (i % 4) * 0.02) * Math.PI * 2 + phase) + 1) * 0.5;
+                const eS = easing.lerp ? easing.lerp(0, 1, rawS) : rawS;
+                const freqTx = (0.05 + (i % 3) * 0.01);
+                const tx = window.MathWasm ? window.MathWasm.wave(now, freqTx, (amp * 0.6), phase + (Math.PI * 0.5)) : Math.cos(now * freqTx + phase) * (amp * 0.6);
+                const freqTy = (0.06 + (i % 4) * 0.008);
+                const ty = window.MathWasm ? window.MathWasm.wave(now, freqTy, (amp * 0.4), phase) : Math.sin(now * freqTy + phase) * (amp * 0.4);
+                s.style.transform = `translate(${tx.toFixed(2)}px, ${ty.toFixed(2)}px) rotate(${(rawS - 0.5) * 8}deg)`;
+            });
+        }
+
+        requestAnimationFrame(tick);
+    };
+
+    requestAnimationFrame(tick);
+};
+
+// Start math-driven animations once DOM ready and (optionally) when WASM is ready
+document.addEventListener('DOMContentLoaded', () => setTimeout(initMathAnimations, 400));
+window.addEventListener('vector2d-wasm-ready', () => setTimeout(initMathAnimations, 200));
+
+// ============================================================================
+// Image Animations (use WASM handle API when available, JS fallback otherwise)
+// ============================================================================
+const initImageAnimations = async () => {
+    const easing = getEasing();
+    const candidates = [];
+
+    const heroFrame = document.querySelector('.image-frame');
+    const heroImg = document.getElementById('heroImg');
+    const aboutImg = document.getElementById('aboutImg');
+    const t2Preview = document.querySelector('#t2Preview img');
+    const portfolioImgs = Array.from(document.querySelectorAll('.portfolio-item img'));
+
+    if (heroFrame) candidates.push({ el: heroFrame, amp: 8, dur: 3.2 });
+    if (heroImg) candidates.push({ el: heroImg, amp: 6, dur: 3.6 });
+    if (aboutImg) candidates.push({ el: aboutImg, amp: 6, dur: 3.2 });
+    if (t2Preview) candidates.push({ el: t2Preview, amp: 10, dur: 4.2 });
+    portfolioImgs.slice(0, 12).forEach(img => candidates.push({ el: img, amp: 6 + Math.random() * 6, dur: 3 + Math.random() * 2 }));
+
+    if (!candidates.length) return;
+
+    await waitForWasm();
+    const hasHandleApi = window.Module?.cwrap && typeof window.Module[`_animation_handle_create`] === 'function';
+
+    let create, stepHandle, getY, destroy;
+    if (hasHandleApi) {
+        try {
+            const w = window.Module.cwrap;
+            create = w('animation_handle_create', 'number', ['number', 'number', 'number', 'number', 'number']);
+            stepHandle = w('animation_handle_step', null, ['number', 'number']);
+            getY = w('animation_handle_get_y', 'number', ['number']);
+            destroy = w('animation_handle_destroy', null, ['number']);
+        } catch (e) {
+            // fallthrough to JS
+            create = null;
+        }
+    }
+
+    // Try to allocate handles for items up to available slots
+    const allocated = [];
+    const jsItems = [];
+
+    for (const it of candidates) {
+        const el = it.el;
+        const amp = it.amp;
+        const dur = it.dur;
+        if (create) {
+            // start at y=-amp/2 -> y=amp/2 for gentle bobbing
+            const h = create(0.0, -amp * 0.5, 0.0, amp * 0.5, dur);
+            if (h) {
+                allocated.push({ el, amp, dur, handle: h });
+                continue;
+            }
+        }
+        // fallback to JS-driven item
+        jsItems.push({ el, amp, dur, phase: Math.random() * Math.PI * 2, freq: (1 / dur) });
+    }
+
+    let last = performance.now();
+    const tick = (ts) => {
+        const dt = (ts - last) / 1000; last = ts;
+        const now = ts / 1000;
+
+        // step WASM handles
+        if (allocated.length && stepHandle) {
+            for (const a of allocated) {
+                try {
+                    stepHandle(a.handle, dt);
+                    const y = getY(a.handle);
+                    a.el.style.transform = `translateY(${y.toFixed(2)}px)`;
+                } catch (e) { /* ignore per-frame wasm timing issues */ }
+            }
+        }
+
+        // JS fallback bobbing
+        if (jsItems.length) {
+            for (const j of jsItems) {
+                const raw = window.MathWasm ? (window.MathWasm.wave(now, Math.PI * 2 * j.freq, 1, j.phase) + 1) * 0.5 : (Math.sin(now * Math.PI * 2 * j.freq + j.phase) + 1) * 0.5;
+                const e = easing.easeInOutCubic(raw);
+                const y = (e - 0.5) * j.amp * 2;
+                j.el.style.transform = `translateY(${y.toFixed(2)}px)`;
+            }
+        }
+
+        requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+
+    // cleanup on unload
+    window.addEventListener('pagehide', () => {
+        if (destroy) allocated.forEach(a => { try { destroy(a.handle); } catch (e) { } });
+    });
+};
+
+document.addEventListener('DOMContentLoaded', () => setTimeout(initImageAnimations, 600));
+window.addEventListener('vector2d-wasm-ready', () => setTimeout(initImageAnimations, 300));
+
+// initSeaScene — DISABLED: Three.js water_theme.js now handles phoenix + fish
+const initSeaScene = async () => {
+    // Replaced by water_theme.js Three.js scene
+    return;
+};
+
+// ============================================================================
+// Profile Image Interactive Rotation (uses WASM vector2D_rotation from C)
+// ============================================================================
+const initProfileImageRotation = async () => {
+    const aboutImage = document.getElementById('aboutImg');
+    if (!aboutImage) return;
+
+    const imageContainer = aboutImage.closest('.about-image');
+    if (!imageContainer) return;
+
+    await waitForWasm();
+    const M = window.MathWasm;
+
+    // Rotation state
+    let targetRotX = 0, targetRotY = 0;
+    let currentRotX = 0, currentRotY = 0;
+    let isHovering = false;
+    let animFrameId = null;
+
+    // Max rotation angles (degrees)
+    const MAX_ROT = 25;
+
+    const onMouseMove = (e) => {
+        const rect = imageContainer.getBoundingClientRect();
+        const cx = rect.left + rect.width / 2;
+        const cy = rect.top + rect.height / 2;
+
+        // Normalized mouse offset from center (-1 to 1)
+        const nx = (e.clientX - cx) / (rect.width / 2);
+        const ny = (e.clientY - cy) / (rect.height / 2);
+
+        // Clamp to [-1, 1]
+        const clampedX = Math.max(-1, Math.min(1, nx));
+        const clampedY = Math.max(-1, Math.min(1, ny));
+
+        if (M && M.rotation_x && M.rotation_y) {
+            // Use WASM vector2D_rotation to compute rotated offset
+            // We rotate the (nx, ny) vector by a small angle proportional to distance from center
+            const dist = M.magnitude_xy ? M.magnitude_xy(clampedX, clampedY) : Math.hypot(clampedX, clampedY);
+            const angle = dist * 0.3; // subtle rotation influence from WASM
+
+            const rotatedX = M.rotation_x(clampedX, clampedY, angle);
+            const rotatedY = M.rotation_y(clampedX, clampedY, angle);
+
+            // Map to CSS rotation: mouse X → rotateY, mouse Y → rotateX (inverted)
+            targetRotY = rotatedX * MAX_ROT;
+            targetRotX = -rotatedY * MAX_ROT;
+        } else {
+            // JS fallback — same math
+            const angle = Math.hypot(clampedX, clampedY) * 0.3;
+            const cosA = Math.cos(angle), sinA = Math.sin(angle);
+            targetRotY = (clampedX * cosA - clampedY * sinA) * MAX_ROT;
+            targetRotX = -(clampedX * sinA + clampedY * cosA) * MAX_ROT;
+        }
+
+        isHovering = true;
+        aboutImage.classList.add('wasm-rotating');
+    };
+
+    const onMouseLeave = () => {
+        isHovering = false;
+        targetRotX = 0;
+        targetRotY = 0;
+    };
+
+    // Smooth animation loop
+    const smoothFactor = 0.12;
+    const returnFactor = 0.06;
+
+    const tick = () => {
+        const factor = isHovering ? smoothFactor : returnFactor;
+
+        if (M && M.lerp) {
+            // WASM lerp unused here because it clamps t 0–1; we need it as raw factor
+        }
+
+        currentRotX += (targetRotX - currentRotX) * factor;
+        currentRotY += (targetRotY - currentRotY) * factor;
+
+        // Apply transform
+        aboutImage.style.transform = `perspective(800px) rotateX(${currentRotX.toFixed(2)}deg) rotateY(${currentRotY.toFixed(2)}deg)`;
+
+        // Remove class when returned to rest
+        if (!isHovering && Math.abs(currentRotX) < 0.05 && Math.abs(currentRotY) < 0.05) {
+            currentRotX = 0;
+            currentRotY = 0;
+            aboutImage.style.transform = '';
+            aboutImage.classList.remove('wasm-rotating');
+        }
+
+        animFrameId = requestAnimationFrame(tick);
+    };
+
+    imageContainer.addEventListener('mousemove', onMouseMove);
+    imageContainer.addEventListener('mouseleave', onMouseLeave);
+
+    // Touch support for mobile
+    imageContainer.addEventListener('touchmove', (e) => {
+        if (e.touches.length === 1) {
+            const touch = e.touches[0];
+            onMouseMove({ clientX: touch.clientX, clientY: touch.clientY });
+        }
+    }, { passive: true });
+    imageContainer.addEventListener('touchend', onMouseLeave);
+
+    animFrameId = requestAnimationFrame(tick);
+    console.log('✅ Profile image WASM rotation initialized');
+};
+
+document.addEventListener('DOMContentLoaded', () => setTimeout(initProfileImageRotation, 500));
+window.addEventListener('vector2d-wasm-ready', () => setTimeout(initProfileImageRotation, 300));
+
+
+// WASM-driven SVG wave animator — replaces CSS keyframes for smoother, continuous waves
+const initWasmWaves = async () => {
+    const paths = Array.from(document.querySelectorAll('.section-wave svg path, .sea-waves path'));
+    if (!paths.length) return;
+    await waitForWasm();
+
+    // safe cwrap for anim_wave
+    const safeCwrap = (name) => {
+        try { return (window.Module && typeof window.Module.cwrap === 'function') ? window.Module.cwrap(name, 'number', ['number', 'number', 'number', 'number']) : null; } catch (e) { return null; }
+    };
+    const wasmWave = safeCwrap('anim_wave') || null;
+
+    // Per-path parsed data: original command tokens and indices of Y values to offset
+    const parsed = paths.map(p => {
+        const d = p.getAttribute('d') || '';
+        // tokenise: keep commands and numbers
+        const tokens = d.replace(/,/g, ' ').trim().split(/(\s+|(?=[A-Za-z])|(?<=[A-Za-z]))/).filter(t => t && !/^\s+$/.test(t));
+        // Extract numeric sequence and remember which indexes are Y values (every second number after an X)
+        const numMatches = d.match(/-?\d*\.?\d+/g) || [];
+        const nums = numMatches.map(n => parseFloat(n));
+        // Determine indices in the numbers array that correspond to Y (assume pairs x,y)
+        const yIndices = [];
+        for (let i = 0; i < nums.length; i++) {
+            if (i % 2 === 1) yIndices.push(i);
+        }
+        // Store original numbers and the raw d template where we will replace numbers by index markers
+        // Create a template by replacing each numeric occurrence with placeholder like {0}
+        let idx = 0;
+        const template = d.replace(/-?\d*\.?\d+/g, () => `{${idx++}}`);
+        return { el: p, template, nums, yIndices };
+    });
+
+    const width = () => Math.max(320, window.innerWidth || 960);
+
+    let last = performance.now();
+    const tick = (ts) => {
+        const t = ts / 1000;
+        const w = width();
+        for (const entry of parsed) {
+            const { el, template, nums: origNums, yIndices } = entry;
+            const nums = origNums.slice();
+            // compute offset for each Y by sampling wave at normalized X
+            for (const yi of yIndices) {
+                const xIndex = yi - 1;
+                const x = (nums[xIndex] || 0);
+                const nx = (x / Math.max(1, w));
+                const freq = 0.7 + nx * 0.9; // spatially varying frequency
+                const amp = 6 + (1 - nx) * 8; // wider amplitude near left
+                const phase = nx * Math.PI * 2;
+                let sample = 0;
+                try {
+                    if (wasmWave) sample = wasmWave(t, Math.PI * 2 * freq, 1, phase);
+                    else sample = Math.sin(t * Math.PI * 2 * freq + phase);
+                } catch (e) { sample = Math.sin(t * Math.PI * 2 * freq + phase); }
+                const offset = sample * amp;
+                nums[yi] = origNums[yi] + offset;
+            }
+            // Rebuild the d string from template
+            const dNext = template.replace(/\{(\d+)\}/g, (_, n) => Number(nums[Number(n)]).toFixed(2));
+            el.setAttribute('d', dNext);
+        }
+        requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+};
+
+document.addEventListener('DOMContentLoaded', () => setTimeout(initWasmWaves, 200));
+window.addEventListener('vector2d-wasm-ready', () => setTimeout(initWasmWaves, 300));
+
+// ============================================================================
+// BUBBLE LAYER (WASM-driven)
+// Uses animation_handle_create/step/getX/getY to move bubbles from bottom->top
+// ============================================================================
+const initBubbleLayer = async (opts = {}) => {
+    const canvas = document.getElementById('bubbleLayer');
+    if (!canvas) return;
+    await waitForWasm();
+    if (!window.Module || typeof window.Module.cwrap !== 'function') return;
+
+    const w = () => window.innerWidth;
+    const h = () => window.innerHeight;
+
+    const ctx = canvas.getContext('2d');
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    let cw = 0, ch = 0;
+
+    const resize = () => {
+        cw = w(); ch = h();
+        canvas.width = cw * dpr; canvas.height = ch * dpr;
+        canvas.style.width = cw + 'px'; canvas.style.height = ch + 'px';
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    };
+    window.addEventListener('resize', resize, { passive: true });
+    resize();
+
+    const cwrap = window.Module.cwrap;
+    const create = cwrap('animation_handle_create', 'number', ['number', 'number', 'number', 'number', 'number']);
+    const stepHandle = cwrap('animation_handle_step', null, ['number', 'number']);
+    const getX = cwrap('animation_handle_get_x', 'number', ['number']);
+    const getY = cwrap('animation_handle_get_y', 'number', ['number']);
+    const destroy = (typeof window.Module._animation_handle_destroy === 'function') ? cwrap('animation_handle_destroy', null, ['number']) : null;
+    if (!create || !stepHandle || !getX || !getY) return;
+
+    const bubbles = [];
+    const POP_COUNT = opts.count || 18;
+
+    const makeBubble = (index) => {
+        const startX = Math.random() * cw;
+        const startY = ch + (Math.random() * 80 + 20);
+        const endX = startX + (Math.random() * 80 - 40);
+        const endY = -50 - Math.random() * 60;
+        const duration = 6 + Math.random() * 6; // seconds
+        const radius = 4 + Math.random() * 10;
+        const handle = create(startX, startY, endX, endY, duration);
+        return { handle, radius, hue: 190 + Math.random() * 40, alpha: 0.08 + Math.random() * 0.35 };
+    };
+
+    for (let i = 0; i < POP_COUNT; i++) {
+        bubbles.push(makeBubble(i));
+    }
+
+    let last = performance.now();
+    const tick = (ts) => {
+        const dt = (ts - last) / 1000; last = ts;
+        ctx.clearRect(0, 0, cw, ch);
+
+        // draw subtle light shafts overlay slightly up top
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.fillStyle = 'rgba(12,40,70,0.02)';
+        ctx.fillRect(0, 0, cw, ch * 0.6);
+        ctx.restore();
+
+        for (const b of bubbles) {
+            try {
+                stepHandle(b.handle, dt);
+                const x = getX(b.handle);
+                const y = getY(b.handle);
+                // draw bubble bloom + rim
+                const grd = ctx.createRadialGradient(x - b.radius * 0.3, y - b.radius * 0.3, 0, x, y, b.radius * 1.8);
+                grd.addColorStop(0, `rgba(255,255,255,${Math.min(0.9, b.alpha * 2)})`);
+                grd.addColorStop(0.6, `hsla(${b.hue},80%,70%,${b.alpha})`);
+                grd.addColorStop(1, `hsla(${b.hue},80%,50%,0)`);
+                ctx.fillStyle = grd;
+                ctx.beginPath(); ctx.arc(x, y, b.radius * 1.6, 0, Math.PI * 2); ctx.fill();
+                // crisp rim
+                ctx.beginPath(); ctx.strokeStyle = `rgba(255,255,255,${Math.min(0.95, b.alpha * 0.8)})`; ctx.lineWidth = 1; ctx.arc(x, y, b.radius, 0, Math.PI * 2); ctx.stroke();
+
+                // Reset if out of bounds (top)
+                if (y < -80 || x < -200 || x > cw + 200) {
+                    // destroy & replace handle
+                    if (destroy) try { destroy(b.handle); } catch (e) { }
+                    const nb = makeBubble(0);
+                    b.handle = nb.handle; b.radius = nb.radius; b.hue = nb.hue; b.alpha = nb.alpha;
+                }
+            } catch (e) { /* ignore per-frame errors */ }
+        }
+
+        requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+
+    window.addEventListener('pagehide', () => {
+        try { if (destroy) bubbles.forEach(b => { try { destroy(b.handle); } catch (e) { } }); } catch (e) { }
+    });
+};
+
+// document.addEventListener('DOMContentLoaded', () => setTimeout(() => initBubbleLayer({ count: 18 }), 900));
+// window.addEventListener('vector2d-wasm-ready', () => setTimeout(() => initBubbleLayer({ count: 18 }), 400));
+
+waitForWasm().then(async () => { _easing = null; getEasing(); try { await initMathWasmBindings(); } catch (e) { } }).catch(() => { });
 
 // ============================================================================
 // OPACITY ANIMATION HELPERS
 // ============================================================================
 const animateOpacityTo = async (el, from, to, ms = 220) => {
     if (!el) return;
-    const ease = getEasing().easeInOutCubic;
-    el.style.transition = 'none';
-    el.style.opacity = String(from);
-    const t0 = performance.now();
-    await new Promise(res => {
-        const tick = (ts) => {
-            const p = clamp01((ts - t0) / ms);
-            el.style.opacity = String(from + (to - from) * ease(p));
-            p < 1 ? requestAnimationFrame(tick) : res();
-        };
-        requestAnimationFrame(tick);
-    });
+    return runWasmOnlyOrFinalize(() => {
+        const ease = getEasing().easeInOutCubic;
+        el.style.transition = 'none';
+        el.style.opacity = String(from);
+        const t0 = performance.now();
+        return new Promise(res => {
+            const tick = (ts) => {
+                const p = clamp01((ts - t0) / ms);
+                el.style.opacity = String(from + (to - from) * ease(p));
+                p < 1 ? requestAnimationFrame(tick) : res();
+            };
+            requestAnimationFrame(tick);
+        });
+    }, () => { el.style.opacity = String(to); });
 };
 const animateOpacityIn = async (el, ms = 220) => {
     if (!el) return;
@@ -296,7 +1029,7 @@ const animateOpacityIn = async (el, ms = 220) => {
 const animateOpacityOut = async (el, ms = 160) => {
     if (!el) return;
     const cur = parseFloat(getComputedStyle(el).opacity || '1');
-    await animateOpacityTo(el, isFinite(cur) ? cur : 1, 0, ms);
+    return animateOpacityTo(el, isFinite(cur) ? cur : 1, 0, ms);
 };
 
 // ============================================================================
@@ -431,7 +1164,8 @@ const initHeroCharSplit = () => {
             ci++;
         }
     }
-    setTimeout(() => nameEl.querySelectorAll('.anim-char').forEach(c => c.classList.add('visible')), 400);
+    // Immediately show characters when not using JS-only animations
+    nameEl.querySelectorAll('.anim-char').forEach(c => c.classList.add('visible'));
 };
 
 
@@ -510,26 +1244,11 @@ const startHeroTypingEffect = async () => {
         el.textContent = '';
     }
 
-    const ease = getEasing().easeInOutCubic;
-    const t0 = performance.now();
-
-    const tick = (ts) => {
-        let active = false;
-        for (const { el, delayMs } of lines) {
-            const full = el.dataset.fullText || '';
-            if (!full) continue;
-            const local = ts - (t0 + delayMs);
-            if (local < 0) { active = true; continue; }
-            const dur = Math.max(450, Math.min(2200, full.length * 38));
-            const p = clamp01(local / dur);
-            const e = ease(p);
-            el.textContent = full.slice(0, Math.floor(e * full.length));
-            if (p < 1) active = true;
-        }
-        if (active) requestAnimationFrame(tick);
-    };
-
-    requestAnimationFrame(tick);
+    // When removing JS-only animations, simply reveal full text immediately
+    for (const { el } of lines) {
+        const full = el.dataset.fullText || '';
+        el.textContent = full;
+    }
 };
 
 // ============================================================================
@@ -539,6 +1258,7 @@ const initHeroTilt = () => {
     const frame = byId('heroFrame');
     const hero = frame?.closest('.hero');
     if (!frame || !hero) return;
+    if (WASM_ONLY_ANIM && !(window.Module && typeof window.Module.cwrap === 'function')) return; // disable JS-only tilt when forcing WASM-only
     let trx = 0, try_ = 0, crx = 0, cry = 0;
 
     hero.addEventListener('mousemove', (e) => {
@@ -552,9 +1272,18 @@ const initHeroTilt = () => {
 
     hero.addEventListener('mouseleave', () => { trx = 0; try_ = 0; }, { passive: true });
 
-    const tick = () => {
-        crx += (trx - crx) * 0.06;
-        cry += (try_ - cry) * 0.06;
+    // Use WASM exponential smoothing when available for crx/cry (lower-cost than JS lerp in hot loops)
+    let lastT = performance.now();
+    const tick = (ts) => {
+        const dt = Math.min(0.05, Math.max(0, (ts - lastT) / 1000));
+        lastT = ts;
+        if (window.MathWasm && typeof window.MathWasm.expSmooth === 'function') {
+            crx = window.MathWasm.expSmooth(crx, trx, 60.0, dt);
+            cry = window.MathWasm.expSmooth(cry, try_, 60.0, dt);
+        } else {
+            crx += (trx - crx) * 0.06;
+            cry += (try_ - cry) * 0.06;
+        }
         frame.style.transform = `perspective(800px) rotateX(${crx}deg) rotateY(${cry}deg)`;
         requestAnimationFrame(tick);
     };
@@ -565,6 +1294,7 @@ const initHeroTilt = () => {
 // 10. SERVICE CARD 3D TILT ON HOVER
 // ============================================================================
 const initServiceCardTilt = () => {
+    if (WASM_ONLY_ANIM && !(window.Module && typeof window.Module.cwrap === 'function')) return; // disable if forcing WASM-only and WASM not ready
     $$('.service-card').forEach(card => {
         if (!card.querySelector('.tilt-card-light')) {
             const light = document.createElement('div');
@@ -587,6 +1317,7 @@ const initServiceCardTilt = () => {
 // 11. MAGNETIC BUTTONS
 // ============================================================================
 const initMagneticButtons = () => {
+    if (WASM_ONLY_ANIM && !(window.Module && typeof window.Module.cwrap === 'function')) return; // disable JS-only magnetic effect
     $$('.cta-button, .download-cv, .submit-button').forEach(btn => {
         btn.addEventListener('mousemove', (e) => {
             const r = btn.getBoundingClientRect();
@@ -606,6 +1337,8 @@ const initMagneticButtons = () => {
 const initButtonRipple = () => {
     $$('.cta-button, .download-cv, .submit-button').forEach(btn => {
         btn.addEventListener('click', (e) => {
+            // If forcing WASM-only animations and WASM not available, don't create JS ripple
+            if (WASM_ONLY_ANIM && !(window.Module && typeof window.Module.cwrap === 'function')) return;
             const r = btn.getBoundingClientRect();
             const ripple = document.createElement('span');
             ripple.className = 'btn-ripple';
@@ -752,6 +1485,11 @@ const typingEffect = (items) => {
         it.el.dataset.fullText = (it.el.textContent || '').trimEnd();
         it.el.textContent = '';
     }
+    // If forcing WASM-only animations but WASM not available, reveal immediately
+    if (WASM_ONLY_ANIM && !(window.Module && typeof window.Module.cwrap === 'function')) {
+        targets.forEach(it => { it.el.textContent = it.el.dataset.fullText || it.el.textContent || ''; });
+        return;
+    }
     const ease = getEasing().easeInOutCubic;
     const t0 = performance.now();
 
@@ -795,6 +1533,11 @@ const initFooterSpringIn = () => {
     if (!container) return;
     const icons = Array.from(container.querySelectorAll('a'));
     icons.forEach(i => { i.style.opacity = '0'; i.style.transform = 'translateY(40px) scale(0.3) rotate(-20deg)'; });
+    if (WASM_ONLY_ANIM && !(window.Module && typeof window.Module.cwrap === 'function')) {
+        // Show immediately if not using JS-only animations
+        icons.forEach(i => { i.style.opacity = ''; i.style.transform = ''; });
+        return;
+    }
 
     const io = new IntersectionObserver((entries) => {
         for (const e of entries) {
@@ -808,18 +1551,20 @@ const initFooterSpringIn = () => {
 };
 
 const springIn = (el) => {
-    const ease = getEasing().easeOutElastic;
-    const t0 = performance.now();
-    const dur = 1000;
-    const tick = (ts) => {
-        const p = clamp01((ts - t0) / dur);
-        const e = ease(p);
-        el.style.opacity = String(Math.min(1, p * 3));
-        el.style.transform = `translateY(${(1 - e) * 40}px) scale(${0.3 + e * 0.7}) rotate(${(1 - e) * -20}deg)`;
-        if (p < 1) requestAnimationFrame(tick);
-        else { el.style.opacity = ''; el.style.transform = ''; }
-    };
-    requestAnimationFrame(tick);
+    return runWasmOnlyOrFinalize(() => {
+        const ease = getEasing().easeOutElastic;
+        const t0 = performance.now();
+        const dur = 1000;
+        const tick = (ts) => {
+            const p = clamp01((ts - t0) / dur);
+            const e = ease(p);
+            el.style.opacity = String(Math.min(1, p * 3));
+            el.style.transform = `translateY(${(1 - e) * 40}px) scale(${0.3 + e * 0.7}) rotate(${(1 - e) * -20}deg)`;
+            if (p < 1) requestAnimationFrame(tick);
+            else { el.style.opacity = ''; el.style.transform = ''; }
+        };
+        requestAnimationFrame(tick);
+    }, () => { el.style.opacity = ''; el.style.transform = ''; });
 };
 
 // ============================================================================
@@ -834,6 +1579,11 @@ const initContactFieldStagger = () => {
     const io = new IntersectionObserver((entries) => {
         for (const e of entries) {
             if (e.isIntersecting) {
+                // If WASM-only mode and WASM not available, set final styles immediately
+                if (WASM_ONLY_ANIM && !(window.Module && typeof window.Module.cwrap === 'function')) {
+                    fields.forEach(f => { f.style.opacity = ''; f.style.transform = ''; });
+                    io.disconnect(); break;
+                }
                 fields.forEach((f, i) => setTimeout(() => {
                     const ease = getEasing().easeOutBack;
                     const t0 = performance.now();
@@ -936,7 +1686,8 @@ const initUnifiedSimulation = async () => {
         if (ctx) {
             ctx.clearRect(0, 0, cw, ch);
             const ptr = api.getCursorPtr() | 0, count = api.getCursorCount() | 0, stride = api.getCursorStride() | 0;
-            const heap = window.Module.HEAPF32, base = ptr >>> 2;
+            const hb = (window.Wasm && typeof window.Wasm.getHeapF32AndBase === 'function') ? window.Wasm.getHeapF32AndBase(ptr) : { heap: (window.Module?.HEAPF32 || new Float32Array(0)), base: (ptr >>> 2) };
+            const heap = hb.heap, base = hb.base;
 
             for (let i = 0; i < count; i++) {
                 const o = base + i * stride;
@@ -962,30 +1713,30 @@ const initUnifiedSimulation = async () => {
         const shapes = window.__floatingShapes;
         if (shapes) {
             const ptr = api.getShapePtr() | 0, count = api.getShapeCount() | 0, stride = api.getShapeStride() | 0;
-            const heap = window.Module.HEAPF32, base = ptr >>> 2;
+            const hb2 = (window.Wasm && typeof window.Wasm.getHeapF32AndBase === 'function') ? window.Wasm.getHeapF32AndBase(ptr) : { heap: (window.Module?.HEAPF32 || new Float32Array(0)), base: (ptr >>> 2) };
+            const heap2 = hb2.heap, base2 = hb2.base;
 
             for (let i = 0; i < count && i < shapes.length; i++) {
-                const o = base + i * stride;
+                const o = base2 + i * stride;
                 const el = shapes[i];
-                el.style.translate = `${heap[o]}px ${heap[o + 1]}px`;
-                // Optional: Update hue or scale from WASM too
+                el.style.translate = `${heap2[o]}px ${heap2[o + 1]}px`;
             }
         }
 
         // 3. Update Interactive Springs (Jumping Titles)
         if (titles.length) {
             const ptr = api.getSpringPtr() | 0, count = api.getSpringCount() | 0, stride = api.getSpringStride() | 0;
-            const heap = window.Module.HEAPF32, base = ptr >>> 2;
+            const hb3 = (window.Wasm && typeof window.Wasm.getHeapF32AndBase === 'function') ? window.Wasm.getHeapF32AndBase(ptr) : { heap: (window.Module?.HEAPF32 || new Float32Array(0)), base: (ptr >>> 2) };
+            const heap3 = hb3.heap, base3 = hb3.base;
 
             for (let i = 0; i < count && i < titles.length; i++) {
-                const o = base + i * stride;
-                const x = heap[o];     // x_current
-                const y = heap[o + 3];   // y_current
+                const o = base3 + i * stride;
+                const x = heap3[o];     // x_current
+                const y = heap3[o + 3];   // y_current
 
-                // Only apply if there's significant movement to save on style updates
                 if (Math.abs(x) > 0.01 || Math.abs(y) > 0.01) {
                     titles[i].style.translate = `${x}px ${y}px`;
-                    titles[i].style.display = 'inline-block'; // Ensure translate works properly
+                    titles[i].style.display = 'inline-block';
                 } else {
                     titles[i].style.translate = '0px 0px';
                 }
@@ -1180,6 +1931,9 @@ const initStressAnimations = async () => {
     let pointerX = window.innerWidth * 0.5, pointerY = window.innerHeight * 0.35;
     window.addEventListener('mousemove', (e) => { pointerX = e.clientX; pointerY = e.clientY; }, { passive: true });
 
+    // DEBUG: if true, position particles by setting `left`/`top` directly
+    const DEBUG_USE_LEFT_TOP = true;
+
     let lastT = performance.now();
     const tick = (ts) => {
         const dt = Math.min(0.05, Math.max(0, (ts - lastT) / 1000));
@@ -1190,7 +1944,9 @@ const initStressAnimations = async () => {
         api.step(ts / 1000, dt, clamp01(y / maxS), clamp01(pointerX / w), clamp01(pointerY / h));
 
         const count = api.getCount() | 0, stride = api.getStride() | 0;
-        const ptr = api.getPtr() | 0, heap = window.Module.HEAPF32, base = ptr >>> 2;
+        const ptr = api.getPtr() >>> 0;
+        const hb = (window.Wasm && typeof window.Wasm.getHeapF32AndBase === 'function') ? window.Wasm.getHeapF32AndBase(ptr) : { heap: (window.Module?.HEAPF32 || (typeof HEAPF32 !== 'undefined' ? HEAPF32 : null)), base: (ptr >>> 2) };
+        const heap = hb.heap, base = hb.base;
 
         for (let i = 0; i < count && i < targets.length; i++) {
             const el = targets[i], o = base + i * stride;
@@ -1213,6 +1969,251 @@ const initStressAnimations = async () => {
     };
     requestAnimationFrame(tick);
 };
+
+// Create N DOM elements and animate them using the C/WASM `domanim` math.
+// Call `createAndStartWasmParticles(500)` to start. Exposed as `window.createWasmParticles`.
+const createAndStartWasmParticles = async (count = 500) => {
+    await waitForWasm();
+    const api = initStressApi();
+    console.log('[wasm-particles] wasm-ready:', !!window.__vector2dWasmReady, 'domanim-api:', !!api);
+    if (!api) {
+        console.warn('[wasm-particles] WASM domanim API not available — cannot start wasm particles');
+        return;
+    }
+
+    // Clamp to DOMANIM_MAX (512) as defined in C implementation
+    const MAX = 512;
+    if (count > MAX) count = MAX;
+
+    // local debug toggle for particle rendering mode
+    const DEBUG_USE_LEFT_TOP = true;
+
+    // Remove previous container if present
+    let container = document.getElementById('wasmParticles');
+    if (container) container.remove();
+    container = document.createElement('div');
+    container.id = 'wasmParticles';
+    // Force container inline styles to ensure it covers the viewport
+    container.style.position = 'fixed';
+    container.style.inset = '0';
+    container.style.top = '0';
+    container.style.left = '0';
+    container.style.width = '100vw';
+    container.style.height = '100vh';
+    container.style.pointerEvents = 'none';
+    container.style.zIndex = '2147483647';
+    document.body.appendChild(container);
+    // debug container
+    console.log('[wasm-particles] created container', { id: container.id, w: container.offsetWidth, h: container.offsetHeight, z: getComputedStyle(container).zIndex });
+    try {
+        const crect = container.getBoundingClientRect();
+        console.log('[wasm-particles] containerRect', crect);
+        console.log('[wasm-particles] containerComputed', {
+            position: getComputedStyle(container).position,
+            inset: getComputedStyle(container).inset,
+            width: getComputedStyle(container).width,
+            height: getComputedStyle(container).height,
+            display: getComputedStyle(container).display,
+            zIndex: getComputedStyle(container).zIndex,
+        });
+    } catch (e) { /* ignore */ }
+
+    const els = [];
+    const parts = [];
+    const w = Math.max(1, window.innerWidth), h = Math.max(1, window.innerHeight);
+    for (let i = 0; i < count; i++) {
+        const el = document.createElement('div');
+        const sizeClass = (i % 3 === 0) ? 'small' : (i % 3 === 1) ? 'medium' : 'large';
+        el.className = `wasm-particle ${sizeClass}`;
+        // position relative to container; we drive movement via CSS vars set below
+        el.style.left = '0px';
+        el.style.top = '0px';
+        // random initial placement
+        const x = Math.random() * w;
+        const y = Math.random() * h;
+        // pick a hue from a small palette so particles vary (red, green, blue, cyan, magenta)
+        const palette = [0, 120, 240, 180, 300];
+        const hue = palette[Math.floor(Math.random() * palette.length)];
+        const sat = 0.9 + Math.random() * 0.6; // 0.9 - 1.5
+        const glow = Math.random() * 0.9; // 0 - 0.9
+        el.style.setProperty('--tx', `${x}px`);
+        el.style.setProperty('--ty', `${y}px`);
+        el.style.setProperty('--rot', `0deg`);
+        el.style.setProperty('--sc', 1);
+        el.style.setProperty('--blur', `0px`);
+        el.style.setProperty('--alpha', 1);
+        el.style.setProperty('--hue', `${hue}deg`);
+        el.style.setProperty('--sat', sat);
+        el.style.setProperty('--glow', glow);
+        container.appendChild(el);
+        // initialize particle state for smooth interpolation / fireworks-like motion
+        parts.push({ x, y, vx: 0, vy: 0, hue, sat, glow, alpha: 1 });
+        els.push(el);
+    }
+
+    // Debug helper: force first few particles visible and topmost for 3s to verify rendering
+    const forceVisible = (n = 6, duration = 3000) => {
+        for (let i = 0; i < n && i < els.length; i++) {
+            const e = els[i];
+            const hue = (i * 60) % 360;
+            e.__dbg_old = {
+                width: e.style.width,
+                height: e.style.height,
+                transform: e.style.transform,
+                background: e.style.background,
+                boxShadow: e.style.boxShadow,
+                zIndex: e.style.zIndex,
+                mixBlendMode: e.style.mixBlendMode,
+                opacity: e.style.opacity,
+            };
+            e.style.width = '48px';
+            e.style.height = '48px';
+            e.style.borderRadius = '50%';
+            e.style.background = `radial-gradient(circle at 35% 30%, rgba(255,255,255,1) 0%, hsl(${hue} 100% 60%) 20%, rgba(0,0,0,0) 60%)`;
+            e.style.boxShadow = `0 0 24px hsl(${hue} 100% 60% / 0.95)`;
+            e.style.zIndex = '99999';
+            e.style.mixBlendMode = 'normal';
+            e.style.opacity = '1';
+            // place near center using inline transform (overrides stylesheet transform)
+            e.style.transform = 'translate(50vw,50vh) translate(-50%,-50%) scale(1)';
+            try { console.log('[wasm-particles] debugRect', i, e.getBoundingClientRect()); } catch (e) { /* ignore */ }
+        }
+        setTimeout(() => {
+            for (let i = 0; i < n && i < els.length; i++) {
+                const e = els[i];
+                if (!e.__dbg_old) continue;
+                e.style.width = e.__dbg_old.width || '';
+                e.style.height = e.__dbg_old.height || '';
+                e.style.transform = e.__dbg_old.transform || '';
+                e.style.background = e.__dbg_old.background || '';
+                e.style.boxShadow = e.__dbg_old.boxShadow || '';
+                e.style.zIndex = e.__dbg_old.zIndex || '';
+                e.style.mixBlendMode = e.__dbg_old.mixBlendMode || '';
+                e.style.opacity = e.__dbg_old.opacity || '';
+                delete e.__dbg_old;
+            }
+            console.log('[wasm-particles] debug forceVisible restored');
+        }, duration);
+    };
+    // debug: don't auto-run forceVisible in normal mode (was making particles disappear after it restored)
+    // forceVisible(6, 3500);
+
+    api.init(count, (Date.now() & 0x7fffffff) | 0);
+
+    let lastT = performance.now();
+    const tick = (ts) => {
+        const dt = Math.min(0.05, Math.max(0, (ts - lastT) / 1000));
+        lastT = ts;
+        const y = window.scrollY || 0;
+        const maxS = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
+        api.step(ts / 1000, dt, clamp01(y / maxS), 0.5, 0.5);
+
+        const got = api.getCount() | 0;
+        const stride = api.getStride() | 0;
+        const ptr = api.getPtr() >>> 0;
+        const hb = (window.Wasm && typeof window.Wasm.getHeapF32AndBase === 'function') ? window.Wasm.getHeapF32AndBase(ptr) : { heap: (window.Module?.HEAPF32 || (typeof HEAPF32 !== 'undefined' ? HEAPF32 : null)), base: (ptr >>> 2) };
+        const heap = hb.heap, base = hb.base;
+
+        // debug: log once when starting to inspect heap/ptr info
+        if (!tick._logged) {
+            console.log('[wasm-particles] tick start — got=%d stride=%d ptr=%d base=%d heapLen=%d bufferBytes=%d', got, stride, ptr, base, heap?.length || 0, window.wasmMemory?.buffer?.byteLength || 0);
+            tick._logged = true;
+        }
+
+        // safety counter for suppressed warnings
+        tick._missed = tick._missed || 0;
+
+        for (let i = 0; i < got && i < els.length; i++) {
+            const el = els[i], o = base + i * stride;
+            // guard against invalid heap/index (can happen if memory not yet mapped or pointer is 0)
+            if (!heap || o < 0 || o + 9 >= heap.length) {
+                if (tick._missed < 6) {
+                    const required = base + got * stride + 10;
+                    console.warn('[wasm-particles] skipping particle update; invalid heap/index — i=%d o=%d got=%d stride=%d ptr=%d base=%d heapLen=%d requiredMin=%d bufferBytes=%d', i, o, got, stride, ptr, base, heap?.length || 0, required, window.wasmMemory?.buffer?.byteLength || 0);
+                    tick._missed++;
+                }
+                continue;
+            }
+            const tx = heap[o] || 0;
+            const ty = heap[o + 1] || 0;
+            const rot = heap[o + 2] || 0;
+            const sc = 1 + ((heap[o + 3] || 1) - 1) * 1.2;
+            const blur = (heap[o + 4] || 0) * 1.5;
+            const hue = ((heap[o + 5] || 0) * 360) % 360;
+            const sat = Math.max(0.2, 1 + ((heap[o + 6] || 1) - 1) * 1.1);
+            const alpha = Math.max(0.15, (heap[o + 7] || 1));
+
+            if (DEBUG_USE_LEFT_TOP) {
+                // Physics-based interpolation: use WASM outputs as attraction targets
+                const p = parts[i] || { x: tx, y: ty, vx: 0, vy: 0 };
+                // map small WASM offsets to screen coordinates around focal point
+                const focalX = window.innerWidth * 0.5;
+                const focalY = window.innerHeight * 0.45;
+                const targetX = focalX + tx * 56;
+                const targetY = focalY + ty * 56;
+                // attract
+                p.vx += (targetX - p.x) * 8 * dt;
+                p.vy += (targetY - p.y) * 8 * dt;
+                // occasional burst for fireworks-like motion
+                if (Math.random() < 0.003) {
+                    p.vx += (Math.random() - 0.5) * 400;
+                    p.vy += (Math.random() - 0.8) * 420;
+                }
+                // damping & integrate
+                p.vx *= 0.96;
+                p.vy *= 0.96;
+                p.x += p.vx * dt;
+                p.y += p.vy * dt;
+                // write back state
+                parts[i] = p;
+                // render
+                el.style.transform = `translate3d(${p.x}px, ${p.y}px, 0) rotate(${rot}deg) scale(${sc})`;
+                el.style.opacity = `${alpha}`;
+                el.style.filter = `blur(${blur}px) saturate(${sat}) hue-rotate(${hue}deg)`;
+            } else {
+                el.style.setProperty('--tx', `${tx}px`);
+                el.style.setProperty('--ty', `${ty}px`);
+                el.style.setProperty('--rot', `${rot}deg`);
+                el.style.setProperty('--sc', sc);
+                el.style.setProperty('--blur', `${blur}px`);
+                el.style.setProperty('--sat', sat);
+                el.style.setProperty('--hue', `${hue}deg`);
+                el.style.setProperty('--alpha', alpha);
+            }
+            // debug sample first few particles to inspect visibility values
+            if (i === 0 && (tick._visChecks || 0) < 6) {
+                const glow = (stride >= 10) ? (heap[o + 8] || 0) : 0;
+                console.log('[wasm-particles] sample[0]', { tx, ty, hue, sat, alpha, glow, ptr, base, o, heapLen: heap?.length });
+                try {
+                    const rect = el.getBoundingClientRect();
+                    console.log('[wasm-particles] elRect', { left: rect.left, top: rect.top, w: rect.width, h: rect.height });
+                } catch (e) { /* ignore */ }
+                // temporarily highlight the particle to ensure it's visible
+                el.style.outline = '1px solid rgba(255,255,255,0.6)';
+                tick._visChecks = (tick._visChecks || 0) + 1;
+            }
+            if (stride >= 10) {
+                el.style.setProperty('--glow', Math.min(1, (heap[o + 8] || 0) * 1.5));
+                el.style.setProperty('--skew', `${(heap[o + 9] || 0) * 0.8}deg`);
+            }
+        }
+
+        requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+
+    // Expose stop/start helpers
+    window.createWasmParticles = createAndStartWasmParticles;
+};
+
+// Auto-start when wasm is ready (convenience)
+window.addEventListener('vector2d-wasm-ready', () => {
+    // slight delay so page layout stabilizes
+    setTimeout(() => {
+        // Disabled to allow Three.js water theme to run smoothly
+        // try { console.log('[wasm-particles] vector2d-wasm-ready event, attempting start'); createAndStartWasmParticles(500); } catch (e) { console.error('[wasm-particles] start failed', e); }
+    }, 200);
+});
 
 // ============================================================================
 // 26. CANVAS PARTICLE FX
@@ -1293,7 +2294,8 @@ const initFx = async () => {
         const count = wasm.fx.getParticleCount() | 0;
         const stride = wasm.fx.getParticleStride() | 0;
         const ptr = wasm.fx.getParticlesPtr() | 0;
-        const heap = window.Module.HEAPF32, base = ptr >>> 2;
+        const hbp = (window.Wasm && typeof window.Wasm.getHeapF32AndBase === 'function') ? window.Wasm.getHeapF32AndBase(ptr) : { heap: (window.Module?.HEAPF32 || new Float32Array(0)), base: (ptr >>> 2) };
+        const heap = hbp.heap, base = hbp.base;
 
         for (let i = 0; i < count; i++) {
             const o = base + i * stride;
@@ -1304,25 +2306,24 @@ const initFx = async () => {
             ctx.fill();
         }
 
-        // Particle links
-        const maxL = w < 768 ? 90 : 120;
-        const maxL2 = maxL * maxL;
+
+        // Glowing lights pass (replace linking lines with soft additive glow)
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
         for (let i = 0; i < count; i++) {
-            const ai = base + i * stride;
-            for (let j = i + 1; j < count; j++) {
-                const bj = base + j * stride;
-                const dx = heap[ai] - heap[bj], dy = heap[ai + 1] - heap[bj + 1];
-                const d2 = dx * dx + dy * dy;
-                if (d2 < maxL2) {
-                    ctx.strokeStyle = `rgba(99,102,241,${(1 - Math.sqrt(d2) / maxL) * 0.1})`;
-                    ctx.lineWidth = 1;
-                    ctx.beginPath();
-                    ctx.moveTo(heap[ai], heap[ai + 1]);
-                    ctx.lineTo(heap[bj], heap[bj + 1]);
-                    ctx.stroke();
-                }
-            }
+            const o = base + i * stride;
+            const x = heap[o], y = heap[o + 1], r = heap[o + 4], hue = heap[o + 5], a = heap[o + 6];
+            // bloom: draw a larger blurred circle behind the particle
+            ctx.beginPath();
+            ctx.fillStyle = `hsla(${hue},90%,65%,${Math.min(0.9, a * 0.8)})`;
+            ctx.shadowColor = `hsla(${hue},90%,65%,${Math.min(0.9, a)})`;
+            ctx.shadowBlur = Math.max(8, r * 6);
+            ctx.arc(x, y, r * 2.2, 0, Math.PI * 2);
+            ctx.fill();
+            // small crisp center (already drawn above) will show on top
+            ctx.shadowBlur = 0;
         }
+        ctx.restore();
 
         requestAnimationFrame(tick);
     };
@@ -1344,7 +2345,7 @@ const initDom = () => {
         }, 250);
     }
     // Load profile XML (fires `profile-loaded` event when ready)
-    loadProfileFromXml().catch(() => {});
+    loadProfileFromXml().catch(() => { });
     // Loading screen
     initLoadingScreen();
 

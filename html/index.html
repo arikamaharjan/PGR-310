@@ -1,5 +1,8 @@
 <!DOCTYPE html>
 <html lang="en">
+<div class="underwater-rays"></div>
+<div class="underwater-rays"></div>
+<div class="underwater-rays"></div>
 
 <head>
     <meta charset="UTF-8">
@@ -7,11 +10,103 @@
     <title>Pratik Maharjan - Portfolio</title>
     <meta name="description"
         content="Portfolio of Pratik Maharjan — Tech Enthusiast, Flutter Developer, and Animation Craftsman.">
-    <link rel="stylesheet" href="../css/style.css">
-    <link rel="icon" href="../assets/favicon.ico">
+
+    <!-- Import map for Three.js -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+                "three/examples/jsm/loaders/GLTFLoader": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/loaders/GLTFLoader.js"
+            }
+        }
+    </script>
+
+    <!-- Dynamic asset loader with proper version -->
+    <script>
+        (function () {
+            if (window.__portfolioChosen) return;
+            window.__portfolioChosen = true;
+
+            const candidates = [
+                { css: '/css/style.css', js1: '/js/vector2D.js', js2: '/js/script.js', js3: '/js/water_theme.js', ico: '/assets/favicon.ico' },
+                { css: '../css/style.css', js1: '../js/vector2D.js', js2: '../js/script.js', js3: '../js/water_theme.js', ico: '../assets/favicon.ico' },
+                { css: 'css/style.css', js1: 'js/vector2D.js', js2: 'js/script.js', js3: 'js/water_theme.js', ico: 'assets/favicon.ico' }
+            ];
+
+            // ✅ UPDATED VERSION - change this when you update files
+            const ver = '2026-02-24-FINAL';
+
+            async function choose() {
+                for (const p of candidates) {
+                    try {
+                        const r = await fetch(p.css, { method: 'HEAD' });
+                        if (r.ok) {
+                            // Load CSS
+                            const l = document.createElement('link');
+                            l.rel = 'stylesheet';
+                            l.href = p.css + '?v=' + ver;
+                            document.head.appendChild(l);
+
+                            // Load favicon
+                            const ico = document.createElement('link');
+                            ico.rel = 'icon';
+                            ico.href = p.ico + '?v=' + ver;
+                            document.head.appendChild(ico);
+
+                            // Load WASM script
+                            const s1 = document.createElement('script');
+                            s1.src = p.js1 + '?v=' + ver;
+                            s1.defer = true;
+                            document.head.appendChild(s1);
+
+                            // Load main script
+                            const s2 = document.createElement('script');
+                            s2.src = p.js2 + '?v=' + ver;
+                            s2.defer = true;
+                            document.head.appendChild(s2);
+
+                            // Load water theme (ES module)
+                            const s3 = document.createElement('script');
+                            s3.src = p.js3 + '?v=' + ver;
+                            s3.type = 'module';
+                            s3.defer = true;
+                            document.head.appendChild(s3);
+
+                            return;
+                        }
+                    } catch (e) {
+                        console.log('Trying next path...', e);
+                    }
+                }
+
+                // Fallback to root
+                console.log('Using fallback paths');
+                const s1 = document.createElement('script');
+                s1.src = '/js/vector2D.js?v=' + ver;
+                s1.defer = true;
+                document.head.appendChild(s1);
+
+                const s2 = document.createElement('script');
+                s2.src = '/js/script.js?v=' + ver;
+                s2.defer = true;
+                document.head.appendChild(s2);
+
+                const s3 = document.createElement('script');
+                s3.src = '/js/water_theme.js?v=' + ver;
+                s3.type = 'module';
+                s3.defer = true;
+                document.head.appendChild(s3);
+            }
+
+            choose();
+        })();
+    </script>
 </head>
 
 <body>
+    <!-- Three.js background canvas -->
+    <canvas id="threeThemeCanvas" aria-hidden="true"></canvas>
+
     <!-- Loading Screen -->
     <div id="loadingScreen" class="loading-screen">
         <div class="loader-content">
@@ -53,6 +148,7 @@
 
     <!-- FX layers (non-interactive) -->
     <canvas id="bgFx" aria-hidden="true"></canvas>
+    <canvas id="bubbleLayer" aria-hidden="true"></canvas>
     <div id="spotlight" aria-hidden="true"></div>
 
     <!-- Navigation -->
@@ -114,9 +210,8 @@
             </div>
             <div class="about-content" data-anim="about-content">
                 <div class="about-image" data-anim="about-image">
-                    <img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==" alt="Profile"
-                        id="aboutImg" decoding="async" loading="lazy">
-                    <div class="image-glare"></div>
+                    <img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==" alt="About"
+                        id="aboutImg" decoding="async">
                 </div>
                 <div class="about-info" data-anim="about-info">
                     <p class="about-description" id="aboutDescription"></p>
@@ -253,9 +348,8 @@
                 <h2 class="section-title" data-scramble>CONTACT ME</h2>
             </div>
             <div class="contact-content" data-anim="contact-content">
-                <!-- FormSubmit: posts directly to FormSubmit (no server required). -->
-                <form class="contact-form" id="contactForm" action="https://formsubmit.co/pratikmaharjan323@gmail.com" method="POST">
-                    <!-- Disable FormSubmit captcha and set a subject template -->
+                <form class="contact-form" id="contactForm" action="https://formsubmit.co/pratikmaharjan323@gmail.com"
+                    method="POST">
                     <input type="hidden" name="_captcha" value="false">
                     <input type="hidden" name="_subject" value="New portfolio message">
                     <div class="form-row">
@@ -263,7 +357,8 @@
                         <input type="email" id="contactEmail" name="email" placeholder="Your Email" required>
                     </div>
                     <input type="text" id="contactSubject" name="subject" placeholder="Subject" required>
-                    <textarea id="contactMessage" name="message" placeholder="Your Message" rows="6" required></textarea>
+                    <textarea id="contactMessage" name="message" placeholder="Your Message" rows="6"
+                        required></textarea>
                     <button type="submit" class="submit-button">Send Message</button>
                 </form>
             </div>
@@ -274,46 +369,70 @@
     <footer class="footer" data-anim="footer">
         <div class="container">
             <div class="social-links" id="socialLinks">
-                <a href="https://www.facebook.com/pratik.maharjan.146" aria-label="Facebook" title="Facebook" target="_blank" rel="noopener noreferrer">
-                    <!-- Facebook SVG -->
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M22 12.07C22 6.55 17.52 2 12 2S2 6.55 2 12.07c0 4.99 3.66 9.12 8.44 9.86v-6.98H8.9v-2.88h1.54V9.41c0-1.52.9-2.36 2.28-2.36.66 0 1.35.12 1.35.12v1.49h-.76c-.75 0-.98.47-.98.95v1.15h1.66l-.27 2.88h-1.39v6.98C18.34 21.19 22 17.06 22 12.07z"/></svg>
+                <a href="https://www.facebook.com/pratik.maharjan.146" aria-label="Facebook" title="Facebook"
+                    target="_blank" rel="noopener noreferrer">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"
+                        xmlns="http://www.w3.org/2000/svg">
+                        <path
+                            d="M22 12.07C22 6.55 17.52 2 12 2S2 6.55 2 12.07c0 4.99 3.66 9.12 8.44 9.86v-6.98H8.9v-2.88h1.54V9.41c0-1.52.9-2.36 2.28-2.36.66 0 1.35.12 1.35.12v1.49h-.76c-.75 0-.98.47-.98.95v1.15h1.66l-.27 2.88h-1.39v6.98C18.34 21.19 22 17.06 22 12.07z" />
+                    </svg>
                 </a>
-                <a href="https://www.instagram.com/amntdevil/" aria-label="Instagram" title="Instagram" target="_blank" rel="noopener noreferrer">
-                    <!-- Instagram SVG -->
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M7 2C4.24 2 2 4.24 2 7v10c0 2.76 2.24 5 5 5h10c2.76 0 5-2.24 5-5V7c0-2.76-2.24-5-5-5H7zm5 6.5A4.5 4.5 0 1 1 7.5 13 4.5 4.5 0 0 1 12 8.5zm5.5-.9a1.2 1.2 0 1 1-1.2 1.2 1.2 1.2 0 0 1 1.2-1.2zM12 9.5A3.5 3.5 0 1 0 15.5 13 3.5 3.5 0 0 0 12 9.5z"/></svg>
+                <a href="https://www.instagram.com/amntdevil/" aria-label="Instagram" title="Instagram" target="_blank"
+                    rel="noopener noreferrer">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"
+                        xmlns="http://www.w3.org/2000/svg">
+                        <path
+                            d="M7 2C4.24 2 2 4.24 2 7v10c0 2.76 2.24 5 5 5h10c2.76 0 5-2.24 5-5V7c0-2.76-2.24-5-5-5H7zm5 6.5A4.5 4.5 0 1 1 7.5 13 4.5 4.5 0 0 1 12 8.5zm5.5-.9a1.2 1.2 0 1 1-1.2 1.2 1.2 1.2 0 0 1 1.2-1.2zM12 9.5A3.5 3.5 0 1 0 15.5 13 3.5 3.5 0 0 0 12 9.5z" />
+                    </svg>
                 </a>
-                <a href="https://www.linkedin.com/in/pratikmaharjan323/" aria-label="LinkedIn" title="LinkedIn" target="_blank" rel="noopener noreferrer">
-                    <!-- LinkedIn SVG -->
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M4.98 3.5C4.98 4.88 3.87 6 2.5 6S0 4.88 0 3.5 1.11 1 2.48 1 4.98 2.12 4.98 3.5zM.22 8h4.56V24H.22V8zM8.98 8h4.38v2.16h.06c.61-1.16 2.11-2.38 4.34-2.38C22.98 7.78 24 10.18 24 14.06V24h-4.56v-8.06c0-1.92-.04-4.4-2.68-4.4-2.68 0-3.09 2.1-3.09 4.26V24H8.98V8z"/></svg>
+                <a href="https://www.linkedin.com/in/pratikmaharjan323/" aria-label="LinkedIn" title="LinkedIn"
+                    target="_blank" rel="noopener noreferrer">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"
+                        xmlns="http://www.w3.org/2000/svg">
+                        <path
+                            d="M4.98 3.5C4.98 4.88 3.87 6 2.5 6S0 4.88 0 3.5 1.11 1 2.48 1 4.98 2.12 4.98 3.5zM.22 8h4.56V24H.22V8zM8.98 8h4.38v2.16h.06c.61-1.16 2.11-2.38 4.34-2.38C22.98 7.78 24 10.18 24 14.06V24h-4.56v-8.06c0-1.92-.04-4.4-2.68-4.4-2.68 0-3.09 2.1-3.09 4.26V24H8.98V8z" />
+                    </svg>
                 </a>
-                <a href="https://x.com/amntevil" aria-label="X" title="X (Twitter)" target="_blank" rel="noopener noreferrer">
-                    <!-- X / Twitter SVG -->
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M22.46 6c-.77.35-1.6.58-2.46.69a4.2 4.2 0 0 0 1.84-2.32 8.3 8.3 0 0 1-2.64 1.02 4.15 4.15 0 0 0-7.06 3.78A11.78 11.78 0 0 1 3.15 4.6a4.12 4.12 0 0 0 1.28 5.53 4.1 4.1 0 0 1-1.88-.52v.05a4.15 4.15 0 0 0 3.33 4.06c-.46.13-.95.2-1.45.08.41 1.28 1.6 2.21 3.01 2.24A8.34 8.34 0 0 1 2 19.54a11.77 11.77 0 0 0 6.29 1.84c7.55 0 11.68-6.26 11.68-11.68v-.53A8.18 8.18 0 0 0 22.46 6z"/></svg>
+                <a href="https://x.com/amntevil" aria-label="X" title="X (Twitter)" target="_blank"
+                    rel="noopener noreferrer">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"
+                        xmlns="http://www.w3.org/2000/svg">
+                        <path
+                            d="M22.46 6c-.77.35-1.6.58-2.46.69a4.2 4.2 0 0 0 1.84-2.32 8.3 8.3 0 0 1-2.64 1.02 4.15 4.15 0 0 0-7.06 3.78A11.78 11.78 0 0 1 3.15 4.6a4.12 4.12 0 0 0 1.28 5.53 4.1 4.1 0 0 1-1.88-.52v.05a4.15 4.15 0 0 0 3.33 4.06c-.46.13-.95.2-1.45.08.41 1.28 1.6 2.21 3.01 2.24A8.34 8.34 0 0 1 2 19.54a11.77 11.77 0 0 0 6.29 1.84c7.55 0 11.68-6.26 11.68-11.68v-.53A8.18 8.18 0 0 0 22.46 6z" />
+                    </svg>
                 </a>
-                <a href="https://github.com/AMNTDEVIL" aria-label="GitHub" title="GitHub" target="_blank" rel="noopener noreferrer">
-                    <!-- GitHub SVG -->
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M12 .5C5.73.5.5 5.73.5 12c0 5.08 3.29 9.38 7.86 10.9.58.1.79-.25.79-.56 0-.28-.01-1.02-.02-2-3.2.7-3.88-1.54-3.88-1.54-.53-1.35-1.3-1.71-1.3-1.71-1.06-.72.08-.71.08-.71 1.17.08 1.79 1.2 1.79 1.2 1.04 1.78 2.73 1.27 3.4.97.11-.76.41-1.27.75-1.56-2.55-.29-5.24-1.28-5.24-5.71 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 5.79 0c2.21-1.49 3.18-1.18 3.18-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.84 1.19 3.1 0 4.44-2.69 5.41-5.25 5.69.42.36.8 1.07.8 2.15 0 1.55-.01 2.8-.01 3.18 0 .31.21.67.8.56A11.5 11.5 0 0 0 23.5 12C23.5 5.73 18.27.5 12 .5z"/></svg>
+                <a href="https://github.com/AMNTDEVIL" aria-label="GitHub" title="GitHub" target="_blank"
+                    rel="noopener noreferrer">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"
+                        xmlns="http://www.w3.org/2000/svg">
+                        <path
+                            d="M12 .5C5.73.5.5 5.73.5 12c0 5.08 3.29 9.38 7.86 10.9.58.1.79-.25.79-.56 0-.28-.01-1.02-.02-2-3.2.7-3.88-1.54-3.88-1.54-.53-1.35-1.3-1.71-1.3-1.71-1.06-.72.08-.71.08-.71 1.17.08 1.79 1.2 1.79 1.2 1.04 1.78 2.73 1.27 3.4.97.11-.76.41-1.27.75-1.56-2.55-.29-5.24-1.28-5.24-5.71 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 5.79 0c2.21-1.49 3.18-1.18 3.18-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.84 1.19 3.1 0 4.44-2.69 5.41-5.25 5.69.42.36.8 1.07.8 2.15 0 1.55-.01 2.8-.01 3.18 0 .31.21.67.8.56A11.5 11.5 0 0 0 23.5 12C23.5 5.73 18.27.5 12 .5z" />
+                    </svg>
                 </a>
-                <a href="https://gitlab.com/AMNTDEVIL" aria-label="GitLab" title="GitLab" target="_blank" rel="noopener noreferrer">
-                    <!-- GitLab SVG -->
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M12 2.4l1.9 4.9 5.1.4-3.9 3.2 1.2 5.1L12 13.6 8.7 16.1l1.2-5.1L6 7.8l5.1-.4L12 2.4z"/></svg>
+                <a href="https://gitlab.com/AMNTDEVIL" aria-label="GitLab" title="GitLab" target="_blank"
+                    rel="noopener noreferrer">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"
+                        xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 2.4l1.9 4.9 5.1.4-3.9 3.2 1.2 5.1L12 13.6 8.7 16.1l1.2-5.1L6 7.8l5.1-.4L12 2.4z" />
+                    </svg>
                 </a>
             </div>
             <p>&copy; 2024 <span id="footerName">Your Name</span>. All rights reserved.</p>
         </div>
     </footer>
 
+    <!-- WASM Module Configuration -->
     <script>
-        window.__assetVersion = '2026-02-15-2';
+        console.log('🔧 Configuring WASM Module...');
+        window.__assetVersion = '2026-02-24-FINAL';
         window.Module = window.Module || {};
         window.Module.locateFile = (path, prefix) => `${prefix}${path}?v=${window.__assetVersion}`;
         window.Module.onRuntimeInitialized = () => {
+            console.log('✅ WASM Runtime initialized');
             window.__vector2dWasmReady = true;
             window.dispatchEvent(new Event('vector2d-wasm-ready'));
         };
     </script>
-    <script src="../js/vector2D.js?v=2026-02-15-2" defer></script>
-    <script src="../js/script.js?v=2026-02-15-2" defer></script>
 </body>
 
 </html>

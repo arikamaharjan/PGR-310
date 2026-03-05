@@ -7,17 +7,20 @@
 }
 
 :root {
-    --primary-color: #6366f1;
-    --secondary-color: #3b82f6;
-    --accent-color: #a855f7;
-    --text-dark: #1f2937;
-    --text-light: #4b5563;
-    --bg-light: #f9fafb;
+    --primary-color: #22d3ee;
+    --secondary-color: #0ea5e9;
+    --accent-color: #38bdf8;
+    --text-dark: #e0f2fe;
+    --text-light: #93c5fd;
+    --bg-light: rgba(2, 12, 28, 0.75);
     --white: #ffffff;
-    --gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    --gradient-accent: linear-gradient(135deg, #6366f1, #a855f7, #ec4899, #3b82f6);
+    --gradient: linear-gradient(135deg, #0284c7 0%, #0ea5e9 50%, #22d3ee 100%);
+    --gradient-accent: linear-gradient(135deg, #0369a1, #0ea5e9, #38bdf8, #06b6d4);
     --font-sans: 'Space Grotesk', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     --font-display: 'Playfair Display', Georgia, 'Times New Roman', serif;
+    --surface: rgba(0, 15, 35, 0.7);
+    --card-bg: linear-gradient(180deg, rgba(0, 40, 80, 0.25), rgba(0, 20, 50, 0.15));
+    --input-bg: rgba(0, 30, 60, 0.3);
 }
 
 body {
@@ -25,46 +28,93 @@ body {
     line-height: 1.6;
     color: var(--text-dark);
     overflow-x: hidden;
-    background: radial-gradient(1200px 800px at 20% 10%, rgba(99, 102, 241, 0.10), transparent 55%),
-        radial-gradient(1000px 700px at 90% 30%, rgba(59, 130, 246, 0.10), transparent 50%),
-        var(--bg-light);
-    /* animated tint overlay to cycle through chosen colors every 5s (25s full loop) */
-    animation: bgTintCycle 25s linear infinite;
+    background: #020c1c;
+}
+
+/* Three.js background canvas */
+#threeCanvas,
+#threeThemeCanvas {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 0;
+    pointer-events: none;
+}
+
+/* Underwater caustics overlay */
+#underwaterOverlay {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 1002;
+    mix-blend-mode: overlay;
+    background: repeating-radial-gradient(circle at 20% 10%, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.00) 10px),
+        radial-gradient(60% 40% at 10% 20%, rgba(255, 255, 255, 0.02), transparent 40%),
+        linear-gradient(180deg, rgba(6, 30, 60, 0.12), rgba(3, 10, 30, 0.26));
+    animation: causticsMove 12s linear infinite;
+}
+
+@keyframes causticsMove {
+    0% {
+        transform: translateY(0) scale(1.02);
+    }
+
+    50% {
+        transform: translateY(-18px) scale(1.03);
+    }
+
+    100% {
+        transform: translateY(0) scale(1.02);
+    }
+}
+
+/* Bubble canvas sits above background FX but below main UI */
+#bubbleLayer {
+    position: fixed;
+    inset: 0;
+    z-index: 1200;
+    pointer-events: none;
 }
 
 @keyframes bgTintCycle {
     0% {
-        background: linear-gradient(rgba(208,232,255,0.10), rgba(208,232,255,0.07)),
+        background: linear-gradient(rgba(208, 232, 255, 0.10), rgba(208, 232, 255, 0.07)),
             radial-gradient(1200px 800px at 20% 10%, rgba(99, 102, 241, 0.10), transparent 55%),
             radial-gradient(1000px 700px at 90% 30%, rgba(59, 130, 246, 0.10), transparent 50%),
             var(--bg-light);
     }
+
     20% {
-        background: linear-gradient(rgba(248,250,252,0.10), rgba(248,250,252,0.07)),
+        background: linear-gradient(rgba(248, 250, 252, 0.10), rgba(248, 250, 252, 0.07)),
             radial-gradient(1200px 800px at 20% 10%, rgba(99, 102, 241, 0.10), transparent 55%),
             radial-gradient(1000px 700px at 90% 30%, rgba(59, 130, 246, 0.10), transparent 50%),
             var(--bg-light);
     }
+
     40% {
-        background: linear-gradient(rgba(230,247,255,0.10), rgba(230,247,255,0.07)),
+        background: linear-gradient(rgba(230, 247, 255, 0.10), rgba(230, 247, 255, 0.07)),
             radial-gradient(1200px 800px at 20% 10%, rgba(99, 102, 241, 0.10), transparent 55%),
             radial-gradient(1000px 700px at 90% 30%, rgba(59, 130, 246, 0.10), transparent 50%),
             var(--bg-light);
     }
+
     60% {
-        background: linear-gradient(rgba(220,20,60,0.10), rgba(220,20,60,0.07)),
+        background: linear-gradient(rgba(220, 20, 60, 0.10), rgba(220, 20, 60, 0.07)),
             radial-gradient(1200px 800px at 20% 10%, rgba(99, 102, 241, 0.10), transparent 55%),
             radial-gradient(1000px 700px at 90% 30%, rgba(59, 130, 246, 0.10), transparent 50%),
             var(--bg-light);
     }
+
     80% {
-        background: linear-gradient(rgba(255,247,178,0.10), rgba(255,247,178,0.07)),
+        background: linear-gradient(rgba(255, 247, 178, 0.10), rgba(255, 247, 178, 0.07)),
             radial-gradient(1200px 800px at 20% 10%, rgba(99, 102, 241, 0.10), transparent 55%),
             radial-gradient(1000px 700px at 90% 30%, rgba(59, 130, 246, 0.10), transparent 50%),
             var(--bg-light);
     }
+
     100% {
-        background: linear-gradient(rgba(208,232,255,0.10), rgba(208,232,255,0.07)),
+        background: linear-gradient(rgba(208, 232, 255, 0.10), rgba(208, 232, 255, 0.07)),
             radial-gradient(1200px 800px at 20% 10%, rgba(99, 102, 241, 0.10), transparent 55%),
             radial-gradient(1000px 700px at 90% 30%, rgba(59, 130, 246, 0.10), transparent 50%),
             var(--bg-light);
@@ -290,22 +340,37 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(2,6,23,0.55);
+    background: rgba(2, 6, 23, 0.55);
     z-index: 20000;
 }
+
 .cv-modal {
-    background: var(--white);
+    background: var(--surface);
     color: var(--text-dark);
     padding: 20px 22px;
     border-radius: 10px;
-    box-shadow: 0 10px 30px rgba(2,6,23,0.3);
+    box-shadow: 0 10px 30px rgba(2, 6, 23, 0.3);
     max-width: 420px;
     width: 90%;
     text-align: center;
 }
-.cv-modal h3 { margin-bottom: 8px; font-size: 1.05rem; }
-.cv-modal p { margin-bottom: 14px; color: var(--text-light); }
-.cv-modal-actions { display:flex; gap:12px; justify-content:center; }
+
+.cv-modal h3 {
+    margin-bottom: 8px;
+    font-size: 1.05rem;
+}
+
+.cv-modal p {
+    margin-bottom: 14px;
+    color: var(--text-light);
+}
+
+.cv-modal-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+}
+
 .cv-modal-actions .cv-yes,
 .cv-modal-actions .cv-no {
     padding: 8px 14px;
@@ -314,8 +379,16 @@ body {
     cursor: pointer;
     font-weight: 600;
 }
-.cv-modal-actions .cv-yes { background: var(--primary-color); color: white; }
-.cv-modal-actions .cv-no { background: #f3f4f6; color: var(--text-dark); }
+
+.cv-modal-actions .cv-yes {
+    background: var(--primary-color);
+    color: white;
+}
+
+.cv-modal-actions .cv-no {
+    background: #f3f4f6;
+    color: var(--text-dark);
+}
 
 .shape {
     position: absolute;
@@ -325,6 +398,59 @@ body {
 }
 
 .shape-1 {
+
+    /* WASM DOM particles (stress test) */
+    #wasmParticles {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 1200;
+        overflow: hidden;
+    }
+
+    .wasm-particle {
+        position: absolute;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        transform-origin: center center;
+        will-change: transform, opacity, filter;
+        transition: opacity 0.12s linear;
+        background: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 1) 0%, rgba(255, 255, 255, 0.9) 8%, rgba(255, 255, 255, 0.25) 20%, rgba(255, 255, 255, 0) 60%);
+        /* visual variables driven by JS/WASM via CSS custom properties */
+        transform: translate(var(--tx, 0px), var(--ty, 0px)) rotate(var(--rot, 0deg)) scale(var(--sc, 1));
+        filter: blur(var(--blur, 0px)) saturate(var(--sat, 1)) hue-rotate(var(--hue, 0deg));
+        opacity: calc(var(--alpha, 1));
+        box-shadow: 0 0 calc(var(--glow, 0.0) * 32px) hsl(var(--hue, 240) 100% 60% / 0.95);
+        mix-blend-mode: normal;
+        /* disable blending so particles show reliably */
+    }
+
+    .wasm-particle.small {
+        width: 12px;
+        height: 12px;
+    }
+
+    .wasm-particle.medium {
+        width: 18px;
+        height: 18px;
+    }
+
+    .wasm-particle.large {
+        width: 28px;
+        height: 28px;
+    }
+
+    .wasm-particle::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: 50%;
+        pointer-events: none;
+        box-shadow: 0 0 calc(var(--glow, 0.0) * 44px) hsl(var(--hue, 240) 100% 60% / 0.6);
+        opacity: calc(var(--alpha, 1) * 0.95);
+    }
+
     width: 300px;
     height: 300px;
     background: conic-gradient(from 0deg, #6366f1, #a855f7, #ec4899, #6366f1);
@@ -354,6 +480,8 @@ body {
     animation: floatShape3 15s ease-in-out infinite, morphBlob 8s ease-in-out infinite;
     filter: blur(30px);
 }
+
+/* Sea-scene container removed — assets render full-screen via Three.js canvas */
 
 .shape-4 {
     width: 180px;
@@ -659,41 +787,97 @@ body::after {
     pointer-events: none;
 }
 
+.section-wave {
+    position: absolute;
+    /* slightly overlap the next section to avoid 1px seams from antialiasing */
+    bottom: -2px;
+    left: 0;
+    width: 100%;
+    overflow: visible;
+    /* allow larger wave shapes to overlap adjacent sections */
+    line-height: 0;
+    pointer-events: none;
+    z-index: 5;
+    /* sit above the following section so the fill masks any gap */
+}
+
 .section-wave svg {
     width: 100%;
-    height: 80px;
+    /* extra height helps hide seams when waves translate vertically */
+    height: 140px;
     display: block;
 }
 
-.hero .section-wave {
-    color: var(--white);
-}
-
-.about .section-wave {
-    color: var(--bg-light);
-}
-
 .services .section-wave {
-    color: var(--white);
+    color: var(--surface);
 }
 
 .portfolio .section-wave {
-    color: var(--bg-light);
+    color: var(--surface);
 }
 
 /* Animate waves */
 .section-wave svg path {
-    animation: waveFlow 6s ease-in-out infinite alternate;
-    transform-origin: center;
+    /* more realistic vertical motion: anchor at the bottom and translateY only
+       (avoid scale/skew that creates visible seams between stacked sections) */
+    will-change: transform;
+    transform-origin: 50% 100%;
+    /* bottom center */
+    animation: waveSurge var(--wave-surge-duration, 4s) cubic-bezier(0.22, 1, 0.36, 1) infinite alternate;
 }
 
-@keyframes waveFlow {
+/* Disable the CSS keyframe-based wave motion when using the WASM animator */
+.section-wave svg path,
+.sea-waves path {
+    animation: none !important;
+}
+
+@keyframes waveSurge {
+
+    /* gentle vertical motion with small horizontal drift to feel alive
+       amplitude reduced so adjacent section edges remain continuous */
     0% {
-        d: path("M0,60 C360,120 720,0 1080,60 C1260,90 1380,30 1440,60 L1440,120 L0,120 Z");
+        transform: translateY(0px) translateX(0px);
+    }
+
+    25% {
+        transform: translateY(-6px) translateX(-4px);
+    }
+
+    50% {
+        transform: translateY(4px) translateX(3px);
+    }
+
+    75% {
+        transform: translateY(-8px) translateX(-6px);
     }
 
     100% {
-        d: path("M0,80 C240,20 600,100 900,40 C1100,0 1300,80 1440,50 L1440,120 L0,120 Z");
+        transform: translateY(0px) translateX(0px);
+    }
+}
+
+/* Optional secondary subtle lateral drift for a choppy ocean feel */
+.section-wave {
+    overflow: visible;
+}
+
+.section-wave svg {
+    will-change: transform;
+    animation: waveDrift var(--wave-drift-duration, 14s) linear infinite;
+}
+
+@keyframes waveDrift {
+    0% {
+        transform: translateX(0);
+    }
+
+    50% {
+        transform: translateX(-18px);
+    }
+
+    100% {
+        transform: translateX(0);
     }
 }
 
@@ -704,9 +888,9 @@ body::after {
     position: fixed;
     top: 0;
     width: 100%;
-    background: rgba(255, 255, 255, 0.95);
+    background: rgba(0, 12, 30, 0.72);
     backdrop-filter: blur(0px);
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
     z-index: 1000;
     padding: 1rem 0;
     transition: padding 0.4s cubic-bezier(0.2, 0.8, 0.2, 1),
@@ -717,12 +901,11 @@ body::after {
 
 .navbar.scrolled {
     padding: 0.55rem 0;
-    background: rgba(255, 255, 255, 0.72);
-    backdrop-filter: blur(18px) saturate(1.4);
-    box-shadow: 0 4px 30px rgba(99, 102, 241, 0.12), 0 1px 3px rgba(0, 0, 0, 0.06);
+    background: rgba(0, 12, 30, 0.92);
+    backdrop-filter: blur(14px) saturate(1.2);
+    box-shadow: 0 8px 40px rgba(0, 80, 150, 0.12), 0 1px 3px rgba(0, 0, 0, 0.25);
 }
 
-.navbar,
 .hero,
 .about,
 .services,
@@ -757,13 +940,13 @@ body::after {
     transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1),
         letter-spacing 0.35s ease, text-shadow 0.25s ease;
     cursor: default;
-    text-shadow: 0 2px 10px rgba(99,102,241,0.06);
+    text-shadow: 0 2px 10px rgba(99, 102, 241, 0.06);
 }
 
 .logo:hover {
     transform: translateY(-2px) scale(1.02);
     letter-spacing: 2px;
-    text-shadow: 0 6px 18px rgba(99,102,241,0.12);
+    text-shadow: 0 6px 18px rgba(99, 102, 241, 0.12);
 }
 
 .navbar.scrolled .logo {
@@ -891,11 +1074,13 @@ body::after {
 .hero {
     margin-top: 80px;
     padding: 4rem 0 8rem;
-    background: var(--bg-light);
+    background: linear-gradient(180deg, rgba(5, 15, 40, 0.3) 0%, rgba(2, 12, 28, 0.5) 100%);
     min-height: calc(100vh - 80px);
     display: flex;
     align-items: center;
     overflow: hidden;
+    position: relative;
+    z-index: 1;
 }
 
 .hero-container {
@@ -990,7 +1175,8 @@ body::after {
     background-clip: unset !important;
     /* Allow normal color rendering */
     -webkit-text-fill-color: unset !important;
-    color: inherit; /* inline color set by JS will take precedence */
+    color: inherit;
+    /* inline color set by JS will take precedence */
 }
 
 /* Text scramble effect */
@@ -1128,6 +1314,143 @@ body::after {
     bottom: -20px;
     background: var(--gradient);
     z-index: -1;
+
+    /* Template stack: allow two overlapping templates that crossfade+slide */
+    .template {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        opacity: 0;
+        transform: translateY(10px) scale(0.995);
+        transition: opacity 480ms cubic-bezier(.2, .8, .2, 1), transform 480ms cubic-bezier(.2, .8, .2, 1);
+        pointer-events: none;
+        z-index: 5;
+    }
+
+    .template.is-active {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+        pointer-events: auto;
+        z-index: 10;
+    }
+
+    .template.is-leaving {
+        opacity: 0;
+        transform: translateY(-8px) scale(0.995);
+        z-index: 6;
+    }
+
+    /* Template 2 specific styles (dark, purple, card layout) */
+    .template-2 {
+        background: radial-gradient(600px 400px at 50% 20%, rgba(168, 85, 247, 0.12), transparent 20%), rgba(12, 6, 23, 0.0);
+        color: #f3ecff;
+    }
+
+    .template-2 .template-2-inner {
+        width: 100%;
+        max-width: 1200px;
+        display: grid;
+        grid-template-columns: 1fr 520px;
+        gap: 36px;
+        align-items: center;
+        padding: 0 20px;
+    }
+
+    .template-2 .t2-left {
+        padding: 40px 20px;
+    }
+
+    .t2-badge {
+        display: inline-block;
+        padding: 8px 12px;
+        border-radius: 12px;
+        background: linear-gradient(90deg, #8b5cf6, #ec4899);
+        color: white;
+        font-weight: 700;
+        margin-bottom: 12px;
+    }
+
+    .t2-heading {
+        font-family: var(--font-display);
+        font-size: 2.25rem;
+        margin: 6px 0 10px;
+        color: #fff;
+    }
+
+    .t2-sub {
+        color: rgba(255, 255, 255, 0.8);
+        margin-bottom: 18px;
+    }
+
+    .t2-extras {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+
+    .t2-card {
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02));
+        padding: 12px 16px;
+        border-radius: 12px;
+        min-width: 160px;
+        color: #efe6ff;
+        box-shadow: 0 10px 30px rgba(99, 102, 241, 0.08);
+    }
+
+    .t2-card span {
+        display: block;
+        margin-top: 6px;
+        color: #d6c8ff;
+        font-size: 0.9rem;
+    }
+
+    .t2-right {
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .t2-orb {
+        width: 280px;
+        height: 280px;
+        border-radius: 50%;
+        background: radial-gradient(circle at 30% 30%, rgba(168, 85, 247, 0.35), rgba(99, 102, 241, 0.15) 40%, transparent 60%);
+        box-shadow: 0 40px 120px rgba(168, 85, 247, 0.12), inset 0 10px 40px rgba(255, 255, 255, 0.02);
+    }
+
+    .t2-preview {
+        position: absolute;
+        width: 360px;
+        height: 220px;
+        right: 50px;
+        bottom: 28px;
+        transform: translateY(0);
+        border-radius: 14px;
+        overflow: hidden;
+        box-shadow: 0 30px 80px rgba(2, 6, 23, 0.4);
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(0, 0, 0, 0.07));
+    }
+
+    .t2-preview img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+
+        .template,
+        .template.is-active,
+        .template.is-leaving {
+            transition: none;
+            transform: none !important;
+        }
+    }
+
     border-radius: 20px;
     opacity: 0.5;
     animation: frameBorderRotate 8s linear infinite;
@@ -1210,8 +1533,11 @@ body::after {
    ============================================ */
 .about {
     padding: 6rem 0 8rem;
-    background: var(--white);
+    background: linear-gradient(180deg, rgba(0, 20, 50, 0.65), rgba(0, 10, 30, 0.75));
     overflow: hidden;
+    position: relative;
+    z-index: 1;
+    border-top: 1px solid rgba(34, 211, 238, 0.1);
 }
 
 .section-header {
@@ -1255,30 +1581,46 @@ body::after {
 }
 
 .about-content {
-    display: grid;
-    grid-template-columns: 1fr 2fr;
-    gap: 4rem;
+    display: flex;
+    flex-direction: column;
     align-items: center;
+    gap: 3rem;
+    text-align: center;
 }
 
 .about-image {
-    perspective: 600px;
+    perspective: 800px;
     position: relative;
+    width: 260px;
+    height: 260px;
+    margin: 0 auto;
+    border-radius: 50%;
     overflow: hidden;
-    border-radius: 20px;
+    box-shadow: 0 0 40px rgba(99, 102, 241, 0.15), 0 0 80px rgba(34, 211, 238, 0.08);
+    transition: box-shadow 0.4s ease;
+}
+
+.about-image:hover {
+    box-shadow: 0 0 60px rgba(99, 102, 241, 0.3), 0 0 120px rgba(34, 211, 238, 0.15);
 }
 
 .about-image img {
     width: 100%;
-    border-radius: 20px;
-    box-shadow: 0 15px 40px rgba(0, 0, 0, 0.1);
-    transition: transform 0.5s ease, box-shadow 0.4s ease;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 50%;
+    transition: transform 0.15s ease-out, box-shadow 0.4s ease;
     will-change: transform;
+    cursor: grab;
 }
 
-.about-image:hover img {
-    transform: scale(1.03);
-    box-shadow: 0 25px 60px rgba(99, 102, 241, 0.18), 0 10px 30px rgba(0, 0, 0, 0.1);
+.about-image img:active {
+    cursor: grabbing;
+}
+
+.about-image img.wasm-rotating {
+    /* Applied when WASM rotation is active — disable CSS hover transforms */
+    transition: none;
 }
 
 .about-description {
@@ -1344,8 +1686,10 @@ body::after {
    ============================================ */
 .services {
     padding: 6rem 0 8rem;
-    background: var(--bg-light);
+    background: linear-gradient(180deg, rgba(0, 15, 40, 0.6), rgba(0, 10, 30, 0.7));
     overflow: hidden;
+    position: relative;
+    z-index: 1;
 }
 
 .services-grid {
@@ -1356,7 +1700,7 @@ body::after {
 }
 
 .service-card {
-    background: var(--white);
+    background: var(--card-bg);
     padding: 2.5rem 2rem;
     border-radius: 15px;
     text-align: center;
@@ -1470,8 +1814,10 @@ body::after {
    ============================================ */
 .portfolio {
     padding: 6rem 0 8rem;
-    background: var(--white);
+    background: linear-gradient(180deg, rgba(0, 20, 50, 0.65), rgba(0, 12, 35, 0.75));
     overflow: hidden;
+    position: relative;
+    z-index: 1;
 }
 
 .portfolio-grid {
@@ -1586,7 +1932,9 @@ body::after {
    ============================================ */
 .contact {
     padding: 6rem 0;
-    background: var(--bg-light);
+    background: linear-gradient(180deg, rgba(0, 15, 40, 0.6), rgba(0, 10, 30, 0.7));
+    position: relative;
+    z-index: 1;
 }
 
 .contact-form {
@@ -1605,14 +1953,14 @@ body::after {
 .contact-form textarea {
     width: 100%;
     padding: 1rem;
-    border: 2px solid #e5e7eb;
+    border: 2px solid rgba(255, 255, 255, 0.06);
     border-radius: 10px;
     font-size: 1rem;
     font-family: inherit;
     transition: border-color 0.3s ease,
         box-shadow 0.5s cubic-bezier(0.2, 0.8, 0.2, 1),
         transform 0.3s ease;
-    background: var(--white);
+    background: var(--input-bg);
     position: relative;
 }
 
@@ -1669,10 +2017,13 @@ body::after {
    FOOTER — Spring Icons + Glow
    ============================================ */
 .footer {
-    background: linear-gradient(135deg, #1f2937, #111827);
+    background: linear-gradient(135deg, rgba(0, 15, 35, 0.9), rgba(0, 8, 25, 0.95));
     color: var(--white);
     padding: 3rem 0;
     text-align: center;
+    position: relative;
+    z-index: 1;
+    border-top: 1px solid rgba(34, 211, 238, 0.1);
 }
 
 .social-links {
