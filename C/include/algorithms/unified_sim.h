@@ -22,37 +22,37 @@
 
 // Structs
 typedef struct {
-    float x, y, vx, vy, life, size, hue;
+    int32_t x, y, vx, vy, life, size, hue;
 } CursorParticle;
 
 typedef struct {
-    float x, y, baseX, baseY, phase, speed, hue, scale;
-    float offsetX, offsetY;
+    int32_t baseX, baseY, x, y, offsetX, offsetY;
+    int32_t phase, speed, hue, scale;
 } FloatingShape;
 
 typedef struct {
-    float x_current, x_target, x_velocity;
-    float y_current, y_target, y_velocity;
+    int32_t x_current, x_target, x_velocity;
+    int32_t y_current, y_target, y_velocity;
 } InteractiveSpring;
 
 // API
 EXPORT void unified_sim_init(int width, int height, uint32_t seed);
-EXPORT void unified_sim_step(float dt, float total_time, float mx, float my, int cw, int ch);
+EXPORT void unified_sim_step(int32_t dt, int32_t total_time, int32_t mx, int32_t my, int cw, int ch);
 
 // Cursor particles
 EXPORT int unified_sim_get_cursor_count();
 EXPORT int unified_sim_get_cursor_stride();
-EXPORT float* unified_sim_get_cursor_ptr();
+EXPORT int32_t* unified_sim_get_cursor_ptr();
 
 // Floating shapes
 EXPORT int unified_sim_get_shape_count();
 EXPORT int unified_sim_get_shape_stride();
-EXPORT float* unified_sim_get_shape_ptr();
+EXPORT int32_t* unified_sim_get_shape_ptr();
 
 // Interactive titles/springs
 EXPORT int unified_sim_get_spring_count();
 EXPORT int unified_sim_get_spring_stride();
-EXPORT float* unified_sim_get_spring_ptr();
-EXPORT void unified_sim_trigger_spring(int index, float vx, float vy);
+EXPORT int32_t* unified_sim_get_spring_ptr();
+EXPORT void unified_sim_trigger_spring(int index, int32_t vx, int32_t vy);
 
 #endif // UNIFIED_SIM_H

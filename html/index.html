@@ -21,7 +21,7 @@
         }
     </script>
 
-    <!-- Dynamic asset loader with proper version -->
+    <!-- Dynamic asset loader with proper version
     <script>
         (function () {
             if (window.__portfolioChosen) return;
@@ -100,7 +100,73 @@
 
             choose();
         })();
+    </script> -->
+    <!-- CSS loaded synchronously to prevent CLS -->
+    <link rel="stylesheet" href="../css/style.css?v=2026-02-24-FINAL">
+    <link rel="preload" href="../css/style.css?v=2026-02-24-FINAL" as="style">
+    <link rel="preload" href="../js/vector2D.js?v=2026-02-24-FINAL" as="script">
+    <link rel="preload" href="../js/script.js?v=2026-02-24-FINAL" as="script">
+    <link rel="preload" href="../js/water_theme.js?v=2026-02-24-FINAL" as="script">
+    <link rel="icon" href="../assets/favicon.ico">
+    <script>
+        // Force loading screen to stay until XML + everything is ready
+        // document.documentElement.style.overflow = 'hidden'; // lock scroll
+
+        async function loadPortfolio() {
+            try {
+                // 1. Fetch your XML (now super fast because of preload)
+                const xmlRes = await fetch('data.xml?v=2026-02-24-FINAL');
+                const xmlText = await xmlRes.text();
+                const parser = new DOMParser();
+                const xmlDoc = parser.parseFromString(xmlText, "text/xml");
+
+                // 2. Populate everything from XML (example)
+                document.getElementById('heroName').textContent = xmlDoc.querySelector('name').textContent;
+                document.getElementById('heroTagline').textContent = xmlDoc.querySelector('tagline').textContent;
+                document.getElementById('heroDescription').textContent = xmlDoc.querySelector('description').textContent;
+                // ... repeat for all IDs ...
+
+                // 3. Hide loading screen
+                document.getElementById('loadingScreen').style.opacity = '0';
+                setTimeout(() => {
+                    document.getElementById('loadingScreen').style.display = 'none';
+                    document.documentElement.style.overflow = 'visible';
+                }, 600);
+            } catch (err) {
+                console.error(err);
+                // fallback: hide loading anyway
+                document.getElementById('loadingScreen').style.display = 'none';
+            }
+        }
+
+        // Start as soon as possible
+        window.addEventListener('load', loadPortfolio);
     </script>
+    <script>
+        (function () {
+            if (window.__portfolioScriptsLoaded) return;
+            window.__portfolioScriptsLoaded = true;
+            const ver = '2026-02-24-FINAL';
+            const base = (function () {
+                // detect correct path prefix
+                const t = document.createElement('link');
+                return '../';
+            })();
+            const paths = ['../', '/', ''];
+            // simple script loader — try each prefix
+            const load = (src, isModule) => {
+                const s = document.createElement('script');
+                s.src = src + '?v=' + ver;
+                if (isModule) s.type = 'module';
+                s.defer = true;
+                document.head.appendChild(s);
+            };
+            load('../js/vector2D.js', false);
+            load('../js/script.js', false);
+            load('../js/water_theme.js', true);
+        })();
+    </script>
+
 </head>
 
 <body>
@@ -160,7 +226,7 @@
                 <li><a href="#about" class="nav-link">About</a></li>
                 <li><a href="#services" class="nav-link">Services</a></li>
                 <li><a href="#portfolio" class="nav-link">Portfolio</a></li>
-                <li><a href="#blog" class="nav-link">Blog</a></li>
+
                 <li><a href="#contact" class="nav-link">Contact</a></li>
             </ul>
             <div class="hamburger" id="hamburger">

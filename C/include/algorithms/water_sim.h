@@ -14,27 +14,30 @@
 #define MAX_BUBBLES 128
 #define WAVE_SAMPLE_COUNT 16
 
+/* All struct fields are 16.16 fixed-point */
+
 typedef struct {
-    float x, y, rot, scaleX;
+    int32_t x, y, rot, scaleX;
 } FishData;
 
 typedef struct {
-    float x, y, size, opacity;
+    int32_t x, y, size, opacity;
 } BubbleData;
 
 typedef struct {
-    float x, y, rot, baseY, speed, phase;
+    int32_t x, y, rot, baseY, speed, phase;
     int goingRight;
 } FishSim;
 
 typedef struct {
-    float x, y, speed, size, phase, startX, opacity;
+    int32_t x, y, startX, speed, size, phase, opacity;
 } BubbleSim;
 
+/* All time/scroll parameters are 16.16 fixed-point */
 EXPORT void watersim_init(int fishCount, int bubbleCount);
-EXPORT void watersim_step(float dt, float totalTime, float scrollNorm);
-EXPORT float* watersim_get_fish_buffer(void);
-EXPORT float* watersim_get_bubble_buffer(void);
-EXPORT float* watersim_get_wave_buffer(float totalTime);
+EXPORT void watersim_step(int32_t dt, int32_t totalTime, int32_t scrollNorm);
+EXPORT int32_t* watersim_get_fish_buffer(void);
+EXPORT int32_t* watersim_get_bubble_buffer(void);
+EXPORT int32_t* watersim_get_wave_buffer(int32_t totalTime);
 
 #endif
