@@ -3172,16 +3172,25 @@ const initBubbleLayer = async (opts = {}) => {
     if (!create || !stepH || !getX || !getY) return;
 
     const bubbles = [];
-    const POP_COUNT = opts.count || 18;
+    const POP_COUNT = opts.count || 28;
+
+    const getWaterTopPx = () => {
+        const nav = byId('navbar');
+        const navH = nav ? nav.getBoundingClientRect().height : 72;
+        const skyBand = window.innerHeight * 0.20;
+        return Math.max(0, navH + skyBand);
+    };
     const makeBubble = () => {
+        const waterTop = getWaterTopPx();
         const startX = M.noise1(Math.random() * 1000, 1) * cw;
-        const startY = ch + M.noise1(Math.random() * 999, 2) * 100 + 20;
+        const startY = ch + M.noise1(Math.random() * 999, 2) * 120 + 20;
         const endX = startX + (M.noise1(Math.random() * 998, 3) - 0.5) * 80;
-        const endY = -50 - M.noise1(Math.random() * 997, 4) * 60;
+        // Stop just below the surface (never into the sky)
+        const endY = waterTop - 20 - M.noise1(Math.random() * 997, 4) * 50;
         const dur = 6 + M.noise1(Math.random() * 996, 5) * 6;
         const radius = 4 + M.noise1(Math.random() * 995, 6) * 10;
         const handle = create(startX, startY, endX, endY, dur);
-        return { handle, radius, hue: 190 + M.noise1(Math.random() * 994, 7) * 40, alpha: 0.08 + M.noise1(Math.random() * 993, 8) * 0.35 };
+        return { handle, radius, hue: 190 + M.noise1(Math.random() * 994, 7) * 40, alpha: 0.14 + M.noise1(Math.random() * 993, 8) * 0.45 };
     };
     for (let i = 0; i < POP_COUNT; i++) bubbles.push(makeBubble());
 
@@ -3189,6 +3198,14 @@ const initBubbleLayer = async (opts = {}) => {
     const tick = (ts) => {
         const dt = (ts - last) / 1000; last = ts;
         ctx.clearRect(0, 0, cw, ch);
+
+        // Draw bubbles ONLY in the water region
+        const waterTop = getWaterTopPx();
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(0, waterTop, cw, Math.max(0, ch - waterTop));
+        ctx.clip();
+
         for (const b of bubbles) {
             try {
                 stepH(b.handle, dt);
@@ -3207,6 +3224,8 @@ const initBubbleLayer = async (opts = {}) => {
                 }
             } catch (e) { }
         }
+
+        ctx.restore();
         requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
@@ -3214,6 +3233,9 @@ const initBubbleLayer = async (opts = {}) => {
         if (destroy) bubbles.forEach(b => { try { destroy(b.handle); } catch (e) { } });
     });
 };
+
+// Enable bubbles (WASM-driven overlay) by default
+document.addEventListener('DOMContentLoaded', () => setTimeout(() => initBubbleLayer({ count: 34 }), 900));
 
 // ============================================================================
 // LOADING SCREEN
@@ -3268,6 +3290,95 @@ const initNavbarMorph = () => {
     window.addEventListener('scroll', update, { passive: true });
     update();
 };
+
+// ============================================================================
+// SKY/WATER SPLIT + DEPTH TINT (per section)
+// ============================================================================
+const initDepthTint = () => {
+    const navbar = byId('navbar');
+    const heroCta = byId('heroCta');
+    const hero = byId('home');
+    const sections = $$('section, footer.footer').filter((el) => el && el.getBoundingClientRect);
+    if (!sections.length) return;
+
+    let skyBandPx = null;
+
+    const syncNavSafe = () => {
+        const navH = navbar ? navbar.getBoundingClientRect().height : 72;
+        document.documentElement.style.setProperty('--nav-safe', `${Math.round(navH)}px`);
+    };
+
+    // Lower the waterline so the sky extends to the Discover button.
+    // Only re-measure when near the top of the page (otherwise the CTA is offscreen).
+    const syncSkyBand = () => {
+        const navH = navbar ? navbar.getBoundingClientRect().height : 72;
+        const vh = window.innerHeight || 1;
+        const maxBand = Math.min(vh * 0.78, 980);
+        const minBand = Math.min(vh * 0.22, 220);
+
+        // Disable sky after the hero section so only the navbar stays "top".
+        const y = window.scrollY || 0;
+        const heroEnd = hero ? ((hero.offsetTop || 0) + (hero.offsetHeight || 0)) : (vh * 0.95);
+        const skyOff = y > (heroEnd - navH - 24);
+        document.body.classList.toggle('sky-off', skyOff);
+        if (skyOff) {
+            skyBandPx = 0;
+            document.documentElement.style.setProperty('--sky-band', '0px');
+            return;
+        }
+
+        let next = vh * 0.20;
+        if (heroCta && (window.scrollY || 0) <= 8) {
+            const r = heroCta.getBoundingClientRect();
+            const desired = (r.bottom + 26) - navH;
+            if (Number.isFinite(desired)) next = desired;
+        } else if (Number.isFinite(skyBandPx)) {
+            next = skyBandPx;
+        }
+
+        skyBandPx = Math.max(minBand, Math.min(maxBand, next));
+        document.documentElement.style.setProperty('--sky-band', `${Math.round(skyBandPx)}px`);
+    };
+
+    const updateDepth = () => {
+        const y = window.scrollY || 0;
+        const vh = window.innerHeight || 1;
+        const probeY = y + vh * 0.45;
+
+        let idx = 0;
+        for (let i = 0; i < sections.length; i++) {
+            const top = sections[i].offsetTop || 0;
+            if (top <= probeY) idx = i;
+        }
+        const depthK = sections.length > 1 ? (idx / (sections.length - 1)) : 0;
+        const clamped = Math.max(0, Math.min(1, depthK));
+        document.documentElement.style.setProperty('--depth-k', clamped.toFixed(4));
+        window.__depthK = clamped;
+    };
+
+    let rafPending = false;
+    const onScroll = () => {
+        if (rafPending) return;
+        rafPending = true;
+        requestAnimationFrame(() => {
+            rafPending = false;
+            syncSkyBand();
+            updateDepth();
+        });
+    };
+    const onResize = () => { syncNavSafe(); syncSkyBand(); updateDepth(); };
+
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onResize, { passive: true });
+    syncNavSafe();
+    syncSkyBand();
+    updateDepth();
+
+    window.addEventListener('load', () => { syncNavSafe(); syncSkyBand(); updateDepth(); }, { once: true });
+    window.addEventListener('profile-loaded', () => { syncNavSafe(); syncSkyBand(); updateDepth(); });
+};
+
+document.addEventListener('DOMContentLoaded', initDepthTint, { once: true });
 
 // ============================================================================
 // SECTION REVEAL
@@ -3784,8 +3895,21 @@ const initLogoAnimation = () => {
 // CUSTOM SMOOTH SCROLL — WASM easeInOutQuart
 // ============================================================================
 const customSmoothScroll = (targetY, ms = 800) => {
-    if (!mathReady()) return;
-    const startY = window.scrollY, diff = targetY - startY;
+    const maxY = Math.max(0, (document.documentElement.scrollHeight || 0) - (window.innerHeight || 0));
+    const clampedY = Math.max(0, Math.min(maxY, targetY));
+
+    // WASM math isn't always ready when users click the navbar.
+    // Fall back to native smooth scrolling so anchor navigation always works.
+    if (!mathReady()) {
+        try {
+            window.scrollTo({ top: clampedY, behavior: 'smooth' });
+        } catch (e) {
+            window.scrollTo(0, clampedY);
+        }
+        return;
+    }
+
+    const startY = window.scrollY, diff = clampedY - startY;
     if (Math.abs(diff) < 1) return;
     const t0 = performance.now();
     const tick = (ts) => {
@@ -4020,12 +4144,20 @@ const initDom = () => {
     const hamburger = byId('hamburger'), navMenu = byId('navMenu');
     if (hamburger && navMenu) hamburger.addEventListener('click', () => { hamburger.classList.toggle('active'); navMenu.classList.toggle('active'); });
 
+    const scrollToEl = (target) => {
+        if (!target || !target.getBoundingClientRect) return;
+        const nav = byId('navbar');
+        const offset = nav ? nav.getBoundingClientRect().height : 80;
+        const y = (target.getBoundingClientRect().top + (window.scrollY || 0)) - offset - 10;
+        customSmoothScroll(y, 900);
+    };
+
     $$('.nav-link').forEach(link => {
         link.addEventListener('click', (e) => {
             const href = link.getAttribute('href') || ''; if (!href.startsWith('#')) return;
             e.preventDefault();
             hamburger?.classList.remove('active'); navMenu?.classList.remove('active');
-            const target = $(href); if (target) customSmoothScroll(target.offsetTop - 80, 900);
+            const target = $(href); if (target) scrollToEl(target);
         });
     });
 
@@ -4033,8 +4165,7 @@ const initDom = () => {
     if (heroCta) heroCta.addEventListener('click', (e) => {
         e.preventDefault();
         const target = $('#about'); if (!target) return;
-        const nav = byId('navbar'), offset = nav ? nav.offsetHeight : 80;
-        customSmoothScroll(target.offsetTop - offset - 10, 900);
+        scrollToEl(target);
     });
 
     const secs = $$('section');

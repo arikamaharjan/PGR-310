@@ -20,93 +20,12 @@
             }
         }
     </script>
-
-    <!-- Dynamic asset loader with proper version
-    <script>
-        (function () {
-            if (window.__portfolioChosen) return;
-            window.__portfolioChosen = true;
-
-            const candidates = [
-                { css: '/css/style.css', js1: '/js/vector2D.js', js2: '/js/script.js', js3: '/js/water_theme.js', ico: '/assets/favicon.ico' },
-                { css: '../css/style.css', js1: '../js/vector2D.js', js2: '../js/script.js', js3: '../js/water_theme.js', ico: '../assets/favicon.ico' },
-                { css: 'css/style.css', js1: 'js/vector2D.js', js2: 'js/script.js', js3: 'js/water_theme.js', ico: 'assets/favicon.ico' }
-            ];
-
-            // ✅ UPDATED VERSION - change this when you update files
-            const ver = '2026-02-24-FINAL';
-
-            async function choose() {
-                for (const p of candidates) {
-                    try {
-                        const r = await fetch(p.css, { method: 'HEAD' });
-                        if (r.ok) {
-                            // Load CSS
-                            const l = document.createElement('link');
-                            l.rel = 'stylesheet';
-                            l.href = p.css + '?v=' + ver;
-                            document.head.appendChild(l);
-
-                            // Load favicon
-                            const ico = document.createElement('link');
-                            ico.rel = 'icon';
-                            ico.href = p.ico + '?v=' + ver;
-                            document.head.appendChild(ico);
-
-                            // Load WASM script
-                            const s1 = document.createElement('script');
-                            s1.src = p.js1 + '?v=' + ver;
-                            s1.defer = true;
-                            document.head.appendChild(s1);
-
-                            // Load main script
-                            const s2 = document.createElement('script');
-                            s2.src = p.js2 + '?v=' + ver;
-                            s2.defer = true;
-                            document.head.appendChild(s2);
-
-                            // Load water theme (ES module)
-                            const s3 = document.createElement('script');
-                            s3.src = p.js3 + '?v=' + ver;
-                            s3.type = 'module';
-                            s3.defer = true;
-                            document.head.appendChild(s3);
-
-                            return;
-                        }
-                    } catch (e) {
-                        console.log('Trying next path...', e);
-                    }
-                }
-
-                // Fallback to root
-                console.log('Using fallback paths');
-                const s1 = document.createElement('script');
-                s1.src = '/js/vector2D.js?v=' + ver;
-                s1.defer = true;
-                document.head.appendChild(s1);
-
-                const s2 = document.createElement('script');
-                s2.src = '/js/script.js?v=' + ver;
-                s2.defer = true;
-                document.head.appendChild(s2);
-
-                const s3 = document.createElement('script');
-                s3.src = '/js/water_theme.js?v=' + ver;
-                s3.type = 'module';
-                s3.defer = true;
-                document.head.appendChild(s3);
-            }
-
-            choose();
-        })();
-    </script> -->
     <!-- CSS loaded synchronously to prevent CLS -->
-    <link rel="stylesheet" href="../css/style.css?v=2026-02-24-FINAL">
-    <link rel="preload" href="../css/style.css?v=2026-02-24-FINAL" as="style">
-    <link rel="preload" href="../js/vector2D.js?v=2026-02-24-FINAL" as="script">
-    <link rel="preload" href="../js/script.js?v=2026-02-24-FINAL" as="script">
-    <link rel="preload" href="../js/water_theme.js?v=2026-02-24-FINAL" as="script">
+    <link rel="stylesheet" href="../css/style.css?v=2026-03-22-SCROLLFIX">
+    <link rel="preload" href="../css/style.css?v=2026-03-22-SCROLLFIX" as="style">
+    <link rel="preload" href="../js/vector2D.js?v=2026-03-22-SCROLLFIX" as="script">
+    <link rel="preload" href="../js/script.js?v=2026-03-22-SCROLLFIX" as="script">
+    <link rel="preload" href="../js/water_theme.js?v=2026-03-22-SCROLLFIX" as="script">
     <link rel="icon" href="../assets/favicon.ico">
     <script>
         // Force loading screen to stay until XML + everything is ready
@@ -115,7 +34,7 @@
         async function loadPortfolio() {
             try {
                 // 1. Fetch your XML (now super fast because of preload)
-                const xmlRes = await fetch('data.xml?v=2026-02-24-FINAL');
+                const xmlRes = await fetch('data.xml?v=2026-03-22-SCROLLFIX');
                 const xmlText = await xmlRes.text();
                 const parser = new DOMParser();
                 const xmlDoc = parser.parseFromString(xmlText, "text/xml");
@@ -146,7 +65,7 @@
         (function () {
             if (window.__portfolioScriptsLoaded) return;
             window.__portfolioScriptsLoaded = true;
-            const ver = '2026-02-24-FINAL';
+            const ver = '2026-03-22-SCROLLFIX';
             const base = (function () {
                 // detect correct path prefix
                 const t = document.createElement('link');
@@ -163,6 +82,7 @@
             };
             load('../js/vector2D.js', false);
             load('../js/script.js', false);
+            load('../js/coral_scene.js', false);
             load('../js/water_theme.js', true);
         })();
     </script>
@@ -172,6 +92,9 @@
 <body>
     <!-- Three.js background canvas -->
     <canvas id="threeThemeCanvas" aria-hidden="true"></canvas>
+
+    <!-- Underwater rays layer (CSS-driven) -->
+    <div id="underwaterRays" aria-hidden="true"></div>
 
     <!-- Loading Screen -->
     <div id="loadingScreen" class="loading-screen">
@@ -225,8 +148,8 @@
                 <li><a href="#home" class="nav-link active">Home</a></li>
                 <li><a href="#about" class="nav-link">About</a></li>
                 <li><a href="#services" class="nav-link">Services</a></li>
-                <li><a href="#portfolio" class="nav-link">Portfolio</a></li>
-
+                <li><a href="#portfolio" class="nav-link">Projects</a></li>
+                <li><a href="https://gitlab.com/AMNTDEVIL/portfolio" class="nav-link" target="_blank" rel="noopener noreferrer">Portfolio</a></li>
                 <li><a href="#contact" class="nav-link">Contact</a></li>
             </ul>
             <div class="hamburger" id="hamburger">
@@ -490,7 +413,7 @@
     <!-- WASM Module Configuration -->
     <script>
         console.log('🔧 Configuring WASM Module...');
-        window.__assetVersion = '2026-02-24-FINAL';
+        window.__assetVersion = '2026-03-22-SCROLLFIX';
         window.Module = window.Module || {};
         window.Module.locateFile = (path, prefix) => `${prefix}${path}?v=${window.__assetVersion}`;
         window.Module.onRuntimeInitialized = () => {
